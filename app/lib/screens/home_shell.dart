@@ -1,5 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
+import '../state/catalog.dart';
+import 'accounts_screen.dart';
+import 'cards_screen.dart';
+import 'reports_screen.dart';
 import 'transactions_screen.dart';
 
 /// Navegação principal (abas na parte de baixo).
@@ -14,15 +19,21 @@ class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
   @override
+  void initState() {
+    super.initState();
+    context.read<Catalog>().refresh();
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: IndexedStack(
         index: _index,
         children: const [
           TransactionsScreen(),
-          _ComingSoon(title: 'Contas', icon: Icons.account_balance_outlined),
-          _ComingSoon(title: 'Cartões', icon: Icons.credit_card),
-          _ComingSoon(title: 'Relatórios', icon: Icons.insights_outlined),
+          AccountsScreen(),
+          CardsScreen(),
+          ReportsScreen(),
         ],
       ),
       bottomNavigationBar: NavigationBar(
@@ -34,31 +45,6 @@ class _HomeShellState extends State<HomeShell> {
           NavigationDestination(icon: Icon(Icons.credit_card_outlined), selectedIcon: Icon(Icons.credit_card), label: 'Cartões'),
           NavigationDestination(icon: Icon(Icons.insights_outlined), selectedIcon: Icon(Icons.insights), label: 'Relatórios'),
         ],
-      ),
-    );
-  }
-}
-
-class _ComingSoon extends StatelessWidget {
-  const _ComingSoon({required this.title, required this.icon});
-
-  final String title;
-  final IconData icon;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Scaffold(
-      appBar: AppBar(title: Text(title)),
-      body: Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(icon, size: 48, color: scheme.outline),
-            const SizedBox(height: 12),
-            Text('Em breve', style: TextStyle(color: scheme.onSurfaceVariant)),
-          ],
-        ),
       ),
     );
   }

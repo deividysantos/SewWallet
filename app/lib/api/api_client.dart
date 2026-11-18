@@ -15,11 +15,15 @@ class ApiException implements Exception {
 
 /// Cliente HTTP da API do SewWallet. Valores em centavos, datas AAAA-MM-DD.
 class ApiClient {
-  ApiClient({required this.baseUrl, this.token, this.onUnauthorized});
+  ApiClient({required this.baseUrl, this.token, this.onUnauthorized, http.Client? client})
+      : _client = client ?? _defaultClient;
 
   final String baseUrl;
   final String? token;
   final void Function()? onUnauthorized;
+  final http.Client _client;
+
+  static final _defaultClient = http.Client();
 
   static const _timeout = Duration(seconds: 20);
 
@@ -62,7 +66,7 @@ class ApiClient {
 
     final http.Response response;
     try {
-      response = await http.Response.fromStream(await request.send().timeout(_timeout));
+      response = await http.Response.fromStream(await _client.send(request).timeout(_timeout));
     } on TimeoutException {
       throw ApiException('O servidor demorou para responder');
     } catch (_) {

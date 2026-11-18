@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../models/ledger.dart';
+import '../state/catalog.dart';
 import '../state/session.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../widgets/common.dart';
+import 'card_detail_screen.dart';
+import 'transaction_form.dart';
 
 /// Lançamentos do mês agrupados por dia, com o saldo das contas no fim de cada dia.
 class TransactionsScreen extends StatefulWidget {
@@ -17,7 +21,6 @@ class TransactionsScreen extends StatefulWidget {
 class _TransactionsScreenState extends State<TransactionsScreen> {
   DateTime _month = DateTime(DateTime.now().year, DateTime.now().month);
   TransactionsPage? _page;
-  List<Account> _accounts = [];
   Set<String> _accountFilter = {};
   bool _includeCards = true;
 
@@ -27,15 +30,28 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   bool _scrollToToday = true;
   final _todayKey = GlobalKey();
   final _scroll = ScrollController();
+  late final Catalog _catalog;
+  int _seenRevision = -1;
 
   @override
   void initState() {
     super.initState();
+    _catalog = context.read<Catalog>();
+    _seenRevision = _catalog.revision;
+    _catalog.addListener(_onCatalog);
+    _load();
+  }
+
+  /// Algo mudou (lançamento, pagamento, conta...): recarrega os saldos.
+  void _onCatalog() {
+    if (_catalog.revision == _seenRevision) return;
+    _seenRevision = _catalog.revision;
     _load();
   }
 
   @override
   void dispose() {
+    _catalog.removeListener(_onCatalog);
     _scroll.dispose();
     super.dispose();
   }
@@ -49,20 +65,14 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     try {
       final from = DateTime(_month.year, _month.month, 1);
       final to = DateTime(_month.year, _month.month + 1, 0);
-      final results = await Future.wait([
-        api.get('/transactions', query: {
-          'from': apiDate(from),
-          'to': apiDate(to),
-          'accountIds': _accountFilter.join(','),
-          'includeCards': '$_includeCards',
-        }),
-        api.get('/accounts'),
-      ]);
-      if (!mounted) return;
-      setState(() {
-        _page = TransactionsPage.fromJson(results[0] as Map<String, dynamic>);
-        _accounts = [for (final a in results[1] as List) Account.fromJson(a as Map<String, dynamic>)];
+      final data = await api.get('/transactions', query: {
+        'from': apiDate(from),
+        'to': apiDate(to),
+        'accountIds': _accountFilter.join(','),
+        'includeCards': '$_includeCards',
       });
+      if (!mounted) return;
+      setState(() => _page = TransactionsPage.fromJson(data as Map<String, dynamic>));
       if (_scrollToToday) {
         _scrollToToday = false;
         WidgetsBinding.instance.addPostFrameCallback((_) => _jumpToToday());
@@ -105,11 +115,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     _load();
   }
 
-  void _snack(String message) {
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(message)));
-  }
+  void _snack(String message) => showSnack(context, message);
 
   Future<void> _togglePaid(TxItem t) async {
     setState(() => _busyId = t.id);
@@ -117,7 +123,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       await context.read<Session>().api.patch('/transactions/${t.id}/status', {
         'status': t.paid ? 'PENDING' : 'PAID',
       });
-      await _load();
+      await _catalog.refresh(); // recarrega esta lista e os saldos das contas
     } catch (e) {
       _snack(e.toString());
     } finally {
@@ -146,7 +152,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     setState(() => _busyId = inv.id);
     try {
       await context.read<Session>().api.post('/invoices/${inv.id}/payments');
-      await _load();
+      await _catalog.refresh();
       _snack('Pagamento da fatura lançado');
     } catch (e) {
       _snack(e.toString());
@@ -161,7 +167,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       isScrollControlled: true,
       showDragHandle: true,
       builder: (_) => _FilterSheet(
-        accounts: _accounts.where((a) => !a.archived).toList(),
+        accounts: _catalog.activeAccounts,
         selected: _accountFilter,
         includeCards: _includeCards,
       ),
@@ -177,6 +183,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   @override
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
+    final catalog = context.watch<Catalog>();
     final filtered = _accountFilter.isNotEmpty || !_includeCards;
     return Scaffold(
       appBar: AppBar(
@@ -188,7 +195,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         ),
         leading: IconButton(
           tooltip: 'Filtros',
-          onPressed: _accounts.isEmpty ? null : _openFilters,
+          onPressed: catalog.activeAccounts.isEmpty ? null : _openFilters,
           icon: Badge(isLabelVisible: filtered, child: const Icon(Icons.filter_list)),
         ),
         actions: [
@@ -214,7 +221,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       body: _buildBody(),
       floatingActionButton: FloatingActionButton(
         tooltip: 'Novo lançamento',
-        onPressed: () => _snack('O cadastro de lançamentos vem no próximo passo'),
+        onPressed: () => TransactionForm.open(context),
         child: const Icon(Icons.add),
       ),
     );
@@ -224,7 +231,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     final page = _page;
     if (page == null) {
       if (_error != null) {
-        return _ErrorView(message: _error!, onRetry: _load);
+        return ErrorView(message: _error!, onRetry: _load);
       }
       return const Center(child: CircularProgressIndicator());
     }
@@ -257,11 +264,15 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                       tx: t,
                       busy: _busyId == t.id,
                       onTogglePaid: () => _togglePaid(t),
+                      onTap: () => TransactionForm.open(context, existing: t),
                     ),
                   InvoiceItem i => _InvoiceTile(
                       invoice: i,
                       busy: _busyId == i.id,
                       onPay: () => _payInvoice(i),
+                      onTap: i.card == null
+                          ? null
+                          : () => CardDetailScreen.open(context, cardId: i.card!.id, invoiceId: i.id),
                     ),
                 },
               if (day.items.isEmpty)
@@ -299,29 +310,19 @@ class _MonthSwitcher extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         IconButton(tooltip: 'Mês anterior', onPressed: onPrevious, icon: const Icon(Icons.chevron_left)),
-        TextButton(onPressed: onTapTitle, child: Text(monthTitle(month), style: Theme.of(context).textTheme.titleMedium)),
+        Flexible(
+          child: TextButton(
+            onPressed: onTapTitle,
+            child: Text(
+              monthTitle(month),
+              style: Theme.of(context).textTheme.titleMedium,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ),
         IconButton(tooltip: 'Próximo mês', onPressed: onNext, icon: const Icon(Icons.chevron_right)),
       ],
-    );
-  }
-}
-
-/// Valor com cor: vermelho se negativo.
-class _Amount extends StatelessWidget {
-  const _Amount(this.cents, {this.style});
-
-  final int cents;
-  final TextStyle? style;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = FinanceColors.of(context);
-    return Text(
-      money(cents),
-      style: (style ?? const TextStyle()).copyWith(
-        color: cents < 0 ? colors.expense : null,
-        fontFeatures: const [FontFeature.tabularFigures()],
-      ),
     );
   }
 }
@@ -354,7 +355,7 @@ class _SummaryCard extends StatelessWidget {
             children: [
               Text(label, style: muted),
               const SizedBox(height: 2),
-              _Amount(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              Amount(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
               Text(hint, style: muted),
             ],
           ),
@@ -410,7 +411,7 @@ class _DayHeader extends StatelessWidget {
           children: [
             Text(text, style: label),
             const SizedBox(width: 6),
-            _Amount(cents, style: value),
+            Amount(cents, style: value),
           ],
         );
 
@@ -446,23 +447,6 @@ class _DayHeader extends StatelessWidget {
   }
 }
 
-class _Leading extends StatelessWidget {
-  const _Leading({required this.icon, this.color});
-
-  final IconData icon;
-  final Color? color;
-
-  @override
-  Widget build(BuildContext context) {
-    final c = color ?? Theme.of(context).colorScheme.primary;
-    return CircleAvatar(
-      radius: 18,
-      backgroundColor: c.withValues(alpha: 0.15),
-      child: Icon(icon, size: 20, color: c),
-    );
-  }
-}
-
 class _Tag extends StatelessWidget {
   const _Tag(this.text, {this.icon, this.color});
 
@@ -478,18 +462,19 @@ class _Tag extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (icon != null) ...[Icon(icon, size: 12, color: c), const SizedBox(width: 3)],
-        Text(text, style: style),
+        Flexible(child: Text(text, style: style, maxLines: 1, overflow: TextOverflow.ellipsis)),
       ],
     );
   }
 }
 
 class _TxTile extends StatelessWidget {
-  const _TxTile({required this.tx, required this.busy, required this.onTogglePaid});
+  const _TxTile({required this.tx, required this.busy, required this.onTogglePaid, this.onTap});
 
   final TxItem tx;
   final bool busy;
   final VoidCallback onTogglePaid;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -519,11 +504,13 @@ class _TxTile extends StatelessWidget {
       if (tx.overdue) _Tag('Atrasado', icon: Icons.warning_amber_rounded, color: colors.warning),
     ];
 
-    return Padding(
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
       child: Row(
         children: [
-          _Leading(icon: icon, color: iconColor),
+          IconBadge(icon: icon, color: iconColor),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -576,16 +563,18 @@ class _TxTile extends StatelessWidget {
           ),
         ],
       ),
+      ),
     );
   }
 }
 
 class _InvoiceTile extends StatelessWidget {
-  const _InvoiceTile({required this.invoice, required this.busy, required this.onPay});
+  const _InvoiceTile({required this.invoice, required this.busy, required this.onPay, this.onTap});
 
   final InvoiceItem invoice;
   final bool busy;
   final VoidCallback onPay;
+  final VoidCallback? onTap;
 
   @override
   Widget build(BuildContext context) {
@@ -600,11 +589,13 @@ class _InvoiceTile extends StatelessWidget {
     };
     final shown = invoice.remaining > 0 ? invoice.remaining : invoice.total;
 
-    return Padding(
+    return InkWell(
+      onTap: onTap,
+      child: Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
       child: Row(
         children: [
-          _Leading(icon: Icons.credit_card, color: scheme.tertiary),
+          IconBadge(icon: Icons.credit_card, color: scheme.tertiary),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -646,6 +637,7 @@ class _InvoiceTile extends StatelessWidget {
                       ),
           ),
         ],
+      ),
       ),
     );
   }
@@ -721,32 +713,6 @@ class _FilterSheetState extends State<_FilterSheet> {
                 ],
               ),
             ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ErrorView extends StatelessWidget {
-  const _ErrorView({required this.message, required this.onRetry});
-
-  final String message;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(Icons.cloud_off_outlined, size: 48, color: Theme.of(context).colorScheme.outline),
-            const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center),
-            const SizedBox(height: 16),
-            FilledButton.tonal(onPressed: onRetry, child: const Text('Tentar de novo')),
           ],
         ),
       ),

@@ -172,12 +172,7 @@ class InvoiceItem extends LedgerItem {
         total: j['total'] as int,
         paidAmount: j['paid'] as int,
         remaining: j['remaining'] as int,
-        status: switch (j['status']) {
-          'OPEN' => InvoiceStatus.open,
-          'PAID' => InvoiceStatus.paid,
-          'OVERDUE' => InvoiceStatus.overdue,
-          _ => InvoiceStatus.closed,
-        },
+        status: parseInvoiceStatus(j['status']),
       );
 }
 
@@ -228,10 +223,20 @@ class TransactionsPage {
       );
 }
 
+const accountTypes = <String, String>{
+  'CHECKING': 'Conta corrente',
+  'SAVINGS': 'Poupança',
+  'WALLET': 'Carteira',
+  'INVESTMENT': 'Investimento',
+  'OTHER': 'Outra',
+};
+
 class Account {
   Account({
     required this.id,
     required this.name,
+    required this.type,
+    required this.initialBalance,
     required this.balance,
     required this.projectedMonthEnd,
     required this.archived,
@@ -240,7 +245,13 @@ class Account {
 
   final String id;
   final String name;
+  final String type;
+  final int initialBalance;
+
+  /// Saldo atual (só pagos até hoje).
   final int balance;
+
+  /// Previsto para o fim do mês (pagos + pendentes).
   final int projectedMonthEnd;
   final bool archived;
   final String? color;
@@ -248,9 +259,233 @@ class Account {
   factory Account.fromJson(Map<String, dynamic> j) => Account(
         id: j['id'] as String,
         name: j['name'] as String,
+        type: j['type'] as String? ?? 'CHECKING',
+        initialBalance: j['initialBalance'] as int? ?? 0,
         balance: j['balance'] as int,
         projectedMonthEnd: j['projectedMonthEnd'] as int,
         archived: j['archived'] as bool? ?? false,
         color: j['color'] as String?,
       );
+}
+
+class Category {
+  Category({required this.id, required this.name, required this.isIncome, this.color, this.icon});
+
+  final String id;
+  final String name;
+  final bool isIncome;
+  final String? color;
+  final String? icon;
+
+  factory Category.fromJson(Map<String, dynamic> j) => Category(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        isIncome: j['kind'] == 'INCOME',
+        color: j['color'] as String?,
+        icon: j['icon'] as String?,
+      );
+}
+
+InvoiceStatus parseInvoiceStatus(dynamic s) => switch (s) {
+      'OPEN' => InvoiceStatus.open,
+      'PAID' => InvoiceStatus.paid,
+      'OVERDUE' => InvoiceStatus.overdue,
+      _ => InvoiceStatus.closed,
+    };
+
+/// Resumo de uma fatura (lista de faturas do cartão / fatura atual).
+class InvoiceSummary {
+  InvoiceSummary({
+    required this.id,
+    required this.refMonth,
+    required this.closingDate,
+    required this.dueDate,
+    required this.total,
+    required this.paid,
+    required this.remaining,
+    required this.status,
+  });
+
+  /// null quando a fatura ainda não tem nenhuma compra.
+  final String? id;
+  final DateTime refMonth;
+  final DateTime closingDate;
+  final DateTime dueDate;
+  final int total;
+  final int paid;
+  final int remaining;
+  final InvoiceStatus status;
+
+  factory InvoiceSummary.fromJson(Map<String, dynamic> j) => InvoiceSummary(
+        id: j['id'] as String?,
+        refMonth: parseDate(j['refMonth'] as String),
+        closingDate: parseDate(j['closingDate'] as String),
+        dueDate: parseDate(j['dueDate'] as String),
+        total: j['total'] as int,
+        paid: j['paid'] as int,
+        remaining: j['remaining'] as int,
+        status: parseInvoiceStatus(j['status']),
+      );
+}
+
+class CardInfo {
+  CardInfo({
+    required this.id,
+    required this.name,
+    required this.closingDay,
+    required this.dueDay,
+    required this.closingDayInNext,
+    required this.paymentAccountId,
+    required this.currentInvoice,
+    required this.limitUsed,
+    required this.archived,
+    this.limit,
+    this.limitAvailable,
+    this.color,
+  });
+
+  final String id;
+  final String name;
+  final int? limit;
+  final int closingDay;
+  final int dueDay;
+  final bool closingDayInNext;
+  final String paymentAccountId;
+  final InvoiceSummary currentInvoice;
+  final int limitUsed;
+  final int? limitAvailable;
+  final bool archived;
+  final String? color;
+
+  factory CardInfo.fromJson(Map<String, dynamic> j) => CardInfo(
+        id: j['id'] as String,
+        name: j['name'] as String,
+        limit: j['limit'] as int?,
+        closingDay: j['closingDay'] as int,
+        dueDay: j['dueDay'] as int,
+        closingDayInNext: j['closingDayInNext'] as bool? ?? true,
+        paymentAccountId: j['paymentAccountId'] as String,
+        currentInvoice: InvoiceSummary.fromJson(j['currentInvoice'] as Map<String, dynamic>),
+        limitUsed: j['limitUsed'] as int,
+        limitAvailable: j['limitAvailable'] as int?,
+        archived: j['archived'] as bool? ?? false,
+        color: j['color'] as String?,
+      );
+}
+
+/// Item de uma fatura (compra ou estorno) ou pagamento.
+class InvoiceEntry {
+  InvoiceEntry({
+    required this.id,
+    required this.description,
+    required this.amount,
+    required this.date,
+    required this.isCredit,
+    required this.paid,
+    this.category,
+    this.installmentNumber,
+    this.installmentTotal,
+  });
+
+  final String id;
+  final String description;
+  final int amount;
+  final DateTime date;
+
+  /// Estorno (abate da fatura).
+  final bool isCredit;
+  final bool paid;
+  final CategoryRef? category;
+  final int? installmentNumber;
+  final int? installmentTotal;
+
+  factory InvoiceEntry.fromJson(Map<String, dynamic> j) => InvoiceEntry(
+        id: j['id'] as String,
+        description: j['description'] as String,
+        amount: j['amount'] as int,
+        date: parseDate(j['date'] as String),
+        isCredit: j['type'] == 'INCOME',
+        paid: j['status'] == 'PAID',
+        category: CategoryRef.fromJson(j['category']),
+        installmentNumber: j['installmentNumber'] as int?,
+        installmentTotal: j['installmentTotal'] as int?,
+      );
+}
+
+class CashflowBucket {
+  CashflowBucket({
+    required this.start,
+    required this.end,
+    required this.income,
+    required this.expense,
+    required this.transfersIn,
+    required this.transfersOut,
+    required this.net,
+    required this.opening,
+    required this.closing,
+  });
+
+  final DateTime start;
+  final DateTime end;
+  final int income;
+  final int expense;
+  final int transfersIn;
+  final int transfersOut;
+  final int net;
+  final int opening;
+  final int closing;
+
+  factory CashflowBucket.fromJson(Map<String, dynamic> j) => CashflowBucket(
+        start: parseDate(j['start'] as String),
+        end: parseDate(j['end'] as String),
+        income: j['income'] as int,
+        expense: j['expense'] as int,
+        transfersIn: j['transfersIn'] as int,
+        transfersOut: j['transfersOut'] as int,
+        net: j['net'] as int,
+        opening: j['opening'] as int,
+        closing: j['closing'] as int,
+      );
+}
+
+class CashflowReport {
+  CashflowReport({
+    required this.from,
+    required this.to,
+    required this.openingBalance,
+    required this.closingBalance,
+    required this.income,
+    required this.expense,
+    required this.transfersIn,
+    required this.transfersOut,
+    required this.net,
+    required this.buckets,
+  });
+
+  final DateTime from;
+  final DateTime to;
+  final int openingBalance;
+  final int closingBalance;
+  final int income;
+  final int expense;
+  final int transfersIn;
+  final int transfersOut;
+  final int net;
+  final List<CashflowBucket> buckets;
+
+  factory CashflowReport.fromJson(Map<String, dynamic> j) {
+    final t = j['totals'] as Map<String, dynamic>;
+    return CashflowReport(
+      from: parseDate(j['from'] as String),
+      to: parseDate(j['to'] as String),
+      openingBalance: j['openingBalance'] as int,
+      closingBalance: j['closingBalance'] as int,
+      income: t['income'] as int,
+      expense: t['expense'] as int,
+      transfersIn: t['transfersIn'] as int,
+      transfersOut: t['transfersOut'] as int,
+      net: t['net'] as int,
+      buckets: [for (final b in j['buckets'] as List) CashflowBucket.fromJson(b as Map<String, dynamic>)],
+    );
+  }
 }

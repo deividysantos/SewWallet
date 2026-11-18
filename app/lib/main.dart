@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
+import 'state/catalog.dart';
 import 'state/session.dart';
 import 'theme.dart';
 
@@ -16,8 +17,17 @@ Future<void> main() async {
 
   final session = Session();
   await session.restore();
+  final catalog = Catalog(session);
 
-  runApp(ChangeNotifierProvider.value(value: session, child: const SewWalletApp()));
+  runApp(
+    MultiProvider(
+      providers: [
+        ChangeNotifierProvider.value(value: session),
+        ChangeNotifierProvider.value(value: catalog),
+      ],
+      child: const SewWalletApp(),
+    ),
+  );
 }
 
 class SewWalletApp extends StatelessWidget {

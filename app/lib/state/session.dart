@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../api/api_client.dart';
@@ -8,6 +9,11 @@ const defaultApiUrl = String.fromEnvironment('API_URL', defaultValue: 'http://lo
 
 /// Sessão do usuário: endereço do servidor, token e dados do usuário logado.
 class Session extends ChangeNotifier {
+  /// [httpClient] só é passado nos testes (API falsa).
+  Session({this.httpClient});
+
+  final http.Client? httpClient;
+
   static const _kServer = 'serverUrl';
   static const _kToken = 'token';
   static const _kUserName = 'userName';
@@ -18,7 +24,8 @@ class Session extends ChangeNotifier {
 
   bool get isLoggedIn => token != null;
 
-  ApiClient get api => ApiClient(baseUrl: serverUrl, token: token, onUnauthorized: logout);
+  ApiClient get api =>
+      ApiClient(baseUrl: serverUrl, token: token, onUnauthorized: logout, client: httpClient);
 
   Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
@@ -33,7 +40,7 @@ class Session extends ChangeNotifier {
     required String password,
   }) async {
     final url = server.trim().isEmpty ? defaultApiUrl : server.trim();
-    final data = await ApiClient(baseUrl: url).post('/auth/login', {
+    final data = await ApiClient(baseUrl: url, client: httpClient).post('/auth/login', {
       'username': username.trim(),
       'password': password,
     }) as Map<String, dynamic>;
