@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme.dart';
 import '../widgets/common.dart';
 import 'cashflow_report_screen.dart';
+import 'category_report_screen.dart';
 
 /// Um relatório disponível na aba Relatórios.
 class _ReportEntry {
@@ -16,6 +17,12 @@ class _ReportEntry {
 
 /// Novos relatórios entram nesta lista.
 final _reports = <_ReportEntry>[
+  _ReportEntry(
+    title: 'Por categoria',
+    description: 'Quanto foi gasto (ou recebido) em cada categoria, comparado ao período anterior',
+    icon: Icons.donut_large,
+    open: CategoryReportScreen.open,
+  ),
   _ReportEntry(
     title: 'Fluxo de caixa',
     description: 'Entradas, saídas e saldo por dia, semana ou mês',

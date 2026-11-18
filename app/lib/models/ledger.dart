@@ -412,6 +412,124 @@ class InvoiceEntry {
       );
 }
 
+/// Total de um mês (histórico do relatório por categoria).
+class MonthTotal {
+  MonthTotal(this.month, this.total);
+  final DateTime month;
+  final int total;
+
+  static List<MonthTotal> listFromJson(dynamic j) => [
+        for (final m in (j as List? ?? const []))
+          MonthTotal(parseDate(m['month'] as String), m['total'] as int),
+      ];
+}
+
+/// Uma linha do relatório por categoria. [id] null = sem categoria.
+class CategorySpend {
+  CategorySpend({
+    required this.id,
+    required this.name,
+    required this.total,
+    required this.count,
+    required this.share,
+    required this.previous,
+    required this.average,
+    this.color,
+    this.icon,
+  });
+
+  final String? id;
+  final String name;
+  final String? color;
+  final String? icon;
+  final int total;
+  final int count;
+
+  /// Fatia do total (0 a 1).
+  final double share;
+
+  /// Período anterior, de mesmo tamanho.
+  final int previous;
+
+  /// Média dos 3 períodos anteriores.
+  final int average;
+
+  factory CategorySpend.fromJson(Map<String, dynamic> j) => CategorySpend(
+        id: j['id'] as String?,
+        name: j['name'] as String,
+        color: j['color'] as String?,
+        icon: j['icon'] as String?,
+        total: j['total'] as int,
+        count: j['count'] as int,
+        share: (j['share'] as num).toDouble(),
+        previous: j['previous'] as int,
+        average: j['average'] as int,
+      );
+}
+
+class CategoryReport {
+  CategoryReport({
+    required this.from,
+    required this.to,
+    required this.total,
+    required this.count,
+    required this.previousTotal,
+    required this.averageTotal,
+    required this.categories,
+    required this.history,
+  });
+
+  final DateTime from;
+  final DateTime to;
+  final int total;
+  final int count;
+  final int previousTotal;
+  final int averageTotal;
+  final List<CategorySpend> categories;
+  final List<MonthTotal> history;
+
+  factory CategoryReport.fromJson(Map<String, dynamic> j) => CategoryReport(
+        from: parseDate(j['from'] as String),
+        to: parseDate(j['to'] as String),
+        total: j['total'] as int,
+        count: j['count'] as int,
+        previousTotal: j['previousTotal'] as int,
+        averageTotal: j['averageTotal'] as int,
+        categories: [for (final c in j['categories'] as List) CategorySpend.fromJson(c as Map<String, dynamic>)],
+        history: MonthTotal.listFromJson(j['history']),
+      );
+}
+
+/// Lançamento no detalhe de uma categoria: [amount] negativo = estorno (abate).
+class CategoryEntry {
+  CategoryEntry({required this.tx, required this.date, required this.amount});
+  final TxItem tx;
+
+  /// Dia em que conta no relatório (compra ou vencimento da fatura).
+  final DateTime date;
+  final int amount;
+}
+
+class CategoryDetail {
+  CategoryDetail({required this.total, required this.history, required this.items});
+  final int total;
+  final List<MonthTotal> history;
+  final List<CategoryEntry> items;
+
+  factory CategoryDetail.fromJson(Map<String, dynamic> j) => CategoryDetail(
+        total: j['total'] as int,
+        history: MonthTotal.listFromJson(j['history']),
+        items: [
+          for (final i in j['items'] as List)
+            CategoryEntry(
+              tx: TxItem.fromJson(i as Map<String, dynamic>),
+              date: parseDate(i['reportDate'] as String),
+              amount: i['reportAmount'] as int,
+            ),
+        ],
+      );
+}
+
 class CashflowBucket {
   CashflowBucket({
     required this.start,

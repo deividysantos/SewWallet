@@ -41,7 +41,7 @@ const normalize = (s: string) =>
     .replace(/\p{Diacritic}/gu, '')
     .toLowerCase();
 
-function makeDto(ledger: Ledger) {
+export function makeDto(ledger: Ledger) {
   const accountById = new Map(ledger.accounts.map((a) => [a.id, a]));
   const cardById = new Map(ledger.cards.map((c) => [c.id, c]));
   const invoiceById = new Map(ledger.invoices.map((i) => [i.id, i]));

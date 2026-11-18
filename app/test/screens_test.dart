@@ -5,6 +5,7 @@ import 'package:sewwallet/models/ledger.dart';
 import 'package:sewwallet/screens/accounts_screen.dart';
 import 'package:sewwallet/screens/cards_screen.dart';
 import 'package:sewwallet/screens/cashflow_report_screen.dart';
+import 'package:sewwallet/screens/category_report_screen.dart';
 import 'package:sewwallet/screens/settings_screen.dart';
 import 'package:sewwallet/screens/transactions_screen.dart';
 import 'package:sewwallet/state/settings.dart';
@@ -197,6 +198,36 @@ void main() {
     await tapText(tester, 'Fluxo de caixa');
     expect(api.calls('GET', '/reports/cashflow'), hasLength(1));
     expect(find.text('Saldo final'), findsWidgets);
+  });
+
+  testWidgets('por categoria: total, comparação, aviso de sem categoria e detalhe', (tester) async {
+    final api = await pumpScreen(tester, const CategoryReportScreen());
+    final now = DateTime.now();
+    final q = api.calls('GET', '/reports/categories').last.url.queryParameters;
+    expect(q['kind'], 'EXPENSE');
+    expect(q['from'], apiDate(DateTime(now.year, now.month, 1)));
+    expect(q['to'], apiDate(DateTime(now.year, now.month + 1, 0)));
+    expect(q['cardDate'], 'purchase', reason: 'segue a configuração do app');
+
+    expect(find.textContaining('▲ 25%'), findsOneWidget, reason: 'R\$ 1.000 vs R\$ 800');
+    expect(find.textContaining('40% está sem categoria'), findsOneWidget);
+    expect(find.text('Compras'), findsOneWidget);
+
+    await tapText(tester, 'Receitas');
+    expect(api.calls('GET', '/reports/categories').last.url.queryParameters['kind'], 'INCOME');
+    await tapText(tester, 'Despesas');
+
+    await tapText(tester, 'Compras');
+    final d = api.calls('GET', '/reports/categories/detail').last.url.queryParameters;
+    expect(d['categoryId'], 'k1');
+    expect(find.text('Notebook'), findsOneWidget);
+    expect(find.textContaining('− R\$'), findsOneWidget, reason: 'estorno abate');
+  });
+
+  testWidgets('por categoria: "sem categoria" abre o detalhe com categoryId=none', (tester) async {
+    final api = await pumpScreen(tester, const CategoryReportScreen());
+    await tapText(tester, 'Sem categoria');
+    expect(api.calls('GET', '/reports/categories/detail').last.url.queryParameters['categoryId'], 'none');
   });
 
   testWidgets('fluxo de caixa: setas andam pelo período', (tester) async {

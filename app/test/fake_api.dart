@@ -103,6 +103,34 @@ class FakeApi {
     'PUT /categories/k1': (_) => {'id': 'k1'},
     'DELETE /categories/k1': (_) => null,
     'POST /cards': (_) => {'id': 'c2'},
+    'GET /reports/categories': (_) => {
+          'kind': 'EXPENSE', 'from': '2026-11-01', 'to': '2026-11-30', 'previousFrom': '2026-10-01', 'previousTo': '2026-10-31',
+          'total': 100000, 'count': 12, 'previousTotal': 80000, 'averageTotal': 90000,
+          'categories': [
+            {'id': 'k1', 'name': 'Compras', 'color': '#AD1457', 'icon': 'shopping_bag', 'total': 60000, 'count': 4, 'share': 0.6, 'previous': 40000, 'average': 45000},
+            {'id': null, 'name': 'Sem categoria', 'color': null, 'icon': null, 'total': 40000, 'count': 8, 'share': 0.4, 'previous': 40000, 'average': 45000},
+          ],
+          'history': [
+            {'month': '2026-06-01', 'total': 0}, {'month': '2026-07-01', 'total': 70000}, {'month': '2026-08-01', 'total': 90000},
+            {'month': '2026-09-01', 'total': 100000}, {'month': '2026-10-01', 'total': 80000}, {'month': '2026-11-01', 'total': 100000},
+          ],
+        },
+    'GET /reports/categories/detail': (_) => {
+          'categoryId': 'k1', 'from': '2026-11-01', 'to': '2026-11-30', 'total': 58000,
+          'history': [{'month': '2026-10-01', 'total': 40000}, {'month': '2026-11-01', 'total': 58000}],
+          'items': [
+            {
+              'kind': 'transaction', 'id': 't2', 'type': 'EXPENSE', 'status': 'PAID', 'description': 'Notebook',
+              'amount': 60000, 'date': '2026-11-14', 'overdue': false, 'affectsBalance': false,
+              'card': {'id': 'c1', 'name': 'Roxinho'}, 'installment': null, 'reportDate': '2026-11-14', 'reportAmount': 60000,
+            },
+            {
+              'kind': 'transaction', 'id': 't3', 'type': 'INCOME', 'status': 'PAID', 'description': 'Estorno loja',
+              'amount': 2000, 'date': '2026-11-16', 'overdue': false, 'affectsBalance': false,
+              'card': {'id': 'c1', 'name': 'Roxinho'}, 'installment': null, 'reportDate': '2026-11-16', 'reportAmount': -2000,
+            },
+          ],
+        },
     'GET /reports/cashflow': (_) => {
           'mode': 'cumulative', 'basis': 'projected', 'granularity': 'month',
           'from': '2026-10-01', 'to': '2026-12-31', 'openingBalance': 100000, 'closingBalance': 250000,
