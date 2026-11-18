@@ -187,10 +187,16 @@ model Transaction {
   recurrenceId String?
   recurrence   Recurrence? @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
 
+  /// Id da operação no arquivo importado (OFX FITID). Usado para conciliar novas importações.
+  externalId   String?
+  /// Nome do lançamento como veio no arquivo importado (OFX MEMO).
+  externalName String?
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@index([userId, date])
+  @@index([cardId, externalId])
   @@index([invoiceId])
   @@index([paysInvoiceId])
   @@index([recurrenceId])

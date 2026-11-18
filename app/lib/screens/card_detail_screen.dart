@@ -11,6 +11,7 @@ import '../widgets/common.dart';
 import '../widgets/money_field.dart';
 import 'card_form.dart';
 import 'cards_screen.dart';
+import 'ofx_import_screen.dart';
 
 String _refLabel(DateTime ref) {
   final s = DateFormat('MMMM yyyy', 'pt_BR').format(ref);
@@ -122,6 +123,23 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     }
   }
 
+  Future<void> _importOfx(DateTime refMonth) async {
+    final currentId = _invoice?.id;
+    try {
+      final imported = await pickAndImportOfx(context, cardId: widget.cardId, refMonth: refMonth);
+      if (!imported || !mounted) return;
+      // Fica na fatura importada (ela pode ter acabado de ser criada).
+      final list = await context.read<Session>().api.get('/cards/${widget.cardId}/invoices') as List;
+      final target = list
+          .map((j) => InvoiceSummary.fromJson(j as Map<String, dynamic>))
+          .where((i) => i.refMonth.year == refMonth.year && i.refMonth.month == refMonth.month)
+          .firstOrNull;
+      await _loadInvoices(selectId: target?.id ?? currentId);
+    } catch (e) {
+      if (mounted) showSnack(context, e.toString());
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final catalog = context.watch<Catalog>();
@@ -151,7 +169,21 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     if (_error != null && _invoice == null) return ErrorView(message: _error!, onRetry: _loadInvoices);
     if (_loading && _invoice == null) return const Center(child: CircularProgressIndicator());
     if (_invoices.isEmpty || _invoice == null) {
-      return const EmptyView(icon: Icons.receipt_long_outlined, message: 'Nenhuma compra neste cartão ainda.');
+      return Column(
+        children: [
+          const Expanded(
+            child: EmptyView(icon: Icons.receipt_long_outlined, message: 'Nenhuma compra neste cartão ainda.'),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+            child: OutlinedButton.icon(
+              onPressed: () => _importOfx(card.currentInvoice.refMonth),
+              icon: const Icon(Icons.upload_file),
+              label: Text('Importar OFX na fatura de ${_refLabel(card.currentInvoice.refMonth)}'),
+            ),
+          ),
+        ],
+      );
     }
 
     final theme = Theme.of(context);
@@ -236,6 +268,13 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
                       style: FilledButton.styleFrom(minimumSize: const Size.fromHeight(44)),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _importOfx(inv.refMonth),
+                    icon: const Icon(Icons.upload_file),
+                    label: const Text('Importar arquivo OFX'),
+                    style: OutlinedButton.styleFrom(minimumSize: const Size.fromHeight(44)),
+                  ),
                 ],
               ),
             ),

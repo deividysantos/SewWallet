@@ -3,8 +3,9 @@ import { z } from 'zod';
 import { prisma } from '../db';
 import { invoicePeriodForPurchase } from '../domain/invoice';
 import { today } from '../lib/dates';
-import { id, parse } from '../lib/http';
+import { dateStr, id, parse } from '../lib/http';
 import { loadLedger } from '../services/ledger';
+import { importOfx, importSchema, previewOfxImport } from '../services/ofxImport';
 import { ownedAccount, ownedCard } from '../services/owned';
 
 export const cardsRouter = Router();
@@ -45,6 +46,21 @@ cardsRouter.get('/:id/invoices', async (req, res) => {
   await ownedCard(req.userId, req.params.id);
   const ledger = await loadLedger(req.userId, today());
   res.json(ledger.invoices.filter((i) => i.cardId === req.params.id));
+});
+
+const ofxPreviewSchema = z.object({ ofx: z.string().min(1).max(900_000) });
+
+/** Prévia da importação de um OFX na fatura que fecha no mês `refMonth` (AAAA-MM-DD). */
+cardsRouter.post('/:id/invoices/:refMonth/ofx/preview', async (req, res) => {
+  const refMonth = parse(dateStr, req.params.refMonth);
+  const body = parse(ofxPreviewSchema, req.body);
+  res.json(await previewOfxImport(req.userId, req.params.id, refMonth, body.ofx));
+});
+
+cardsRouter.post('/:id/invoices/:refMonth/ofx/import', async (req, res) => {
+  const refMonth = parse(dateStr, req.params.refMonth);
+  const body = parse(importSchema, req.body);
+  res.status(201).json(await importOfx(req.userId, req.params.id, refMonth, body));
 });
 
 cardsRouter.post('/', async (req, res) => {
