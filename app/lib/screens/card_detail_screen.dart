@@ -9,6 +9,7 @@ import '../theme.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
 import '../widgets/money_field.dart';
+import '../widgets/stitch.dart';
 import 'card_form.dart';
 import 'cards_screen.dart';
 import 'ofx_import_screen.dart';
@@ -227,10 +228,10 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
               ),
             ],
           ),
-          Card(
+          StitchedCard(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: Padding(
-              padding: const EdgeInsets.all(16),
+              padding: EdgeInsets.zero,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../theme.dart';
+import '../widgets/common.dart';
 import 'cashflow_report_screen.dart';
 
 /// Um relatório disponível na aba Relatórios.
@@ -28,7 +30,6 @@ class ReportsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
     return Scaffold(
       appBar: AppBar(title: const Text('Relatórios')),
       body: ListView(
@@ -39,11 +40,7 @@ class ReportsScreen extends StatelessWidget {
               margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
               clipBehavior: Clip.antiAlias,
               child: ListTile(
-                leading: CircleAvatar(
-                  backgroundColor: scheme.primaryContainer,
-                  foregroundColor: scheme.onPrimaryContainer,
-                  child: Icon(r.icon),
-                ),
+                leading: IconBadge(icon: r.icon, color: FinanceColors.of(context).accent, radius: 20),
                 title: Text(r.title),
                 subtitle: Text(r.description),
                 trailing: const Icon(Icons.chevron_right),

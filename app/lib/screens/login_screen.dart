@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/session.dart';
+import '../theme.dart';
+import '../widgets/stitch.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -67,16 +69,18 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    Icon(Icons.account_balance_wallet_outlined, size: 56, color: scheme.primary),
-                    const SizedBox(height: 12),
-                    Text('SewWallet', textAlign: TextAlign.center, style: theme.textTheme.headlineMedium),
-                    const SizedBox(height: 4),
+                    const Center(child: SewMark(size: 44)),
+                    const SizedBox(height: 14),
                     Text(
-                      'Suas finanças, no seu servidor',
+                      'Finanças sob medida, no seu servidor.',
                       textAlign: TextAlign.center,
-                      style: theme.textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+                      style: SewFonts.display(TextStyle(
+                        fontSize: 16,
+                        fontStyle: FontStyle.italic,
+                        color: scheme.onSurfaceVariant,
+                      )),
                     ),
-                    const SizedBox(height: 32),
+                    const SizedBox(height: 36),
                     TextFormField(
                       controller: _username,
                       decoration: const InputDecoration(

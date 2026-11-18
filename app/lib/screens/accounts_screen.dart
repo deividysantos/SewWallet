@@ -7,6 +7,7 @@ import '../state/session.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
 import '../widgets/money_field.dart';
+import '../widgets/stitch.dart';
 import 'categories_screen.dart';
 
 IconData accountIcon(String type) => switch (type) {
@@ -52,23 +53,23 @@ class AccountsScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.only(bottom: 96),
           children: [
-            Card(
-              margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+            StitchedCard(
               child: Padding(
-                padding: const EdgeInsets.all(16),
+                padding: EdgeInsets.zero,
                 child: Row(
                   children: [
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text('Saldo atual', style: muted),
-                        Amount(total, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+                        HeroAmount(total, fontSize: 24),
                         Text('só o que já foi pago', style: muted),
                       ]),
                     ),
+                    const SizedBox(width: 12),
                     Expanded(
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text('Previsto no fim do mês', style: muted),
-                        Amount(projected, style: theme.textTheme.titleLarge?.copyWith(fontWeight: FontWeight.w600)),
+                        HeroAmount(projected, fontSize: 24),
                         Text('pagos + pendentes', style: muted),
                       ]),
                     ),

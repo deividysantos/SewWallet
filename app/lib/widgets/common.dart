@@ -16,9 +16,37 @@ class Amount extends StatelessWidget {
     final colors = FinanceColors.of(context);
     return Text(
       money(cents),
-      style: (style ?? const TextStyle()).copyWith(
+      style: SewFonts.mono(style ?? DefaultTextStyle.of(context).style).copyWith(
         color: color ?? (cents < 0 ? colors.expense : null),
-        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
+    );
+  }
+}
+
+/// Valor de destaque (saldos dos resumos): Fraunces grande, encolhe para caber numa linha.
+class HeroAmount extends StatelessWidget {
+  const HeroAmount(this.cents, {super.key, this.fontSize = 26, this.color});
+
+  final int cents;
+  final double fontSize;
+  final Color? color;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = FinanceColors.of(context);
+    return FittedBox(
+      fit: BoxFit.scaleDown,
+      alignment: Alignment.centerLeft,
+      child: Text(
+        money(cents),
+        maxLines: 1,
+        style: SewFonts.display(TextStyle(
+          fontSize: fontSize,
+          fontWeight: FontWeight.w600,
+          letterSpacing: -0.6,
+          color: color ?? (cents < 0 ? colors.expense : Theme.of(context).colorScheme.onSurface),
+          fontFeatures: const [FontFeature.tabularFigures()],
+        )),
       ),
     );
   }
@@ -77,21 +105,29 @@ class EmptyView extends StatelessWidget {
   }
 }
 
-/// Círculo com ícone colorido (categoria, conta, cartão).
+/// "Etiqueta": quadrado arredondado com ícone colorido (categoria, conta, cartão).
 class IconBadge extends StatelessWidget {
   const IconBadge({super.key, required this.icon, this.color, this.radius = 18});
 
   final IconData icon;
   final Color? color;
+
+  /// Metade do lado (mantém a medida do antigo círculo).
   final double radius;
 
   @override
   Widget build(BuildContext context) {
-    final c = color ?? Theme.of(context).colorScheme.primary;
-    return CircleAvatar(
-      radius: radius,
-      backgroundColor: c.withValues(alpha: 0.15),
-      child: Icon(icon, size: radius * 1.1, color: c),
+    final c = color ?? Theme.of(context).colorScheme.tertiary;
+    final side = radius * 2;
+    return Container(
+      width: side,
+      height: side,
+      decoration: BoxDecoration(
+        color: c.withValues(alpha: 0.14),
+        borderRadius: BorderRadius.circular(radius * 0.55),
+        border: Border.all(color: c.withValues(alpha: 0.28)),
+      ),
+      child: Icon(icon, size: radius * 1.05, color: c),
     );
   }
 }

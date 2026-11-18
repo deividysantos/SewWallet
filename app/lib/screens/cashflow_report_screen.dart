@@ -11,6 +11,7 @@ import '../state/session.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
+import '../widgets/stitch.dart';
 
 enum _Gran { day, week, month }
 
@@ -563,10 +564,9 @@ class _Totals extends StatelessWidget {
         );
 
     final hasTransfers = report.transfersIn != 0 || report.transfersOut != 0;
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+    return StitchedCard(
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: EdgeInsets.zero,
         child: Column(
           children: [
             Row(children: [
@@ -681,10 +681,10 @@ class _BalanceChart extends StatelessWidget {
                 lineBarsData: [
                   LineChartBarData(
                     spots: [for (var i = 0; i < values.length; i++) FlSpot(i.toDouble(), values[i])],
-                    color: scheme.primary,
+                    color: FinanceColors.of(context).accent,
                     barWidth: 2.5,
                     dotData: FlDotData(show: buckets.length <= 16),
-                    belowBarData: BarAreaData(show: true, color: scheme.primary.withValues(alpha: 0.12)),
+                    belowBarData: BarAreaData(show: true, color: FinanceColors.of(context).accent.withValues(alpha: 0.12)),
                   ),
                 ],
               ),
@@ -710,7 +710,7 @@ class _BucketTable extends StatelessWidget {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final head = theme.textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant);
-    final cell = theme.textTheme.bodySmall?.copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+    final cell = SewFonts.mono(theme.textTheme.bodySmall);
 
     Widget row(List<Widget> cells, {Color? bg}) => Container(
           color: bg,
@@ -735,12 +735,12 @@ class _BucketTable extends StatelessWidget {
         for (final b in report.buckets)
           row(
             [
-              Text(labelOf(b), style: cell, maxLines: 2),
-              Text(money(b.income), style: cell?.copyWith(color: b.income == 0 ? scheme.outline : colors.income)),
-              Text(money(b.expense), style: cell?.copyWith(color: b.expense == 0 ? scheme.outline : colors.expense)),
-              Amount(b.closing, style: cell?.copyWith(fontWeight: FontWeight.w600)),
+              Text(labelOf(b), style: theme.textTheme.bodySmall, maxLines: 2),
+              Text(money(b.income), style: cell.copyWith(color: b.income == 0 ? scheme.outline : colors.income)),
+              Text(money(b.expense), style: cell.copyWith(color: b.expense == 0 ? scheme.outline : colors.expense)),
+              Amount(b.closing, style: cell.copyWith(fontWeight: FontWeight.w600)),
             ],
-            bg: !today.isBefore(b.start) && !today.isAfter(b.end) ? scheme.primaryContainer.withValues(alpha: 0.5) : null,
+            bg: !today.isBefore(b.start) && !today.isAfter(b.end) ? colors.accent.withValues(alpha: 0.1) : null,
           ),
       ],
     );

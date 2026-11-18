@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../state/settings.dart';
+import '../widgets/stitch.dart';
 import 'categories_screen.dart';
 
 /// Configurações do app. Novas parametrizações entram aqui, cada grupo na sua seção.
@@ -51,13 +52,19 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
           ),
-          const Divider(height: 32),
+          const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Stitch(indent: 16, endIndent: 16)),
           section('Cadastros'),
           ListTile(
             leading: const Icon(Icons.label_outline),
             title: const Text('Categorias'),
             trailing: const Icon(Icons.chevron_right),
             onTap: () => CategoriesScreen.open(context),
+          ),
+          const SizedBox(height: 40),
+          const Center(child: SewMark(size: 22)),
+          const SizedBox(height: 6),
+          Center(
+            child: Text('feito sob medida', style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
           ),
         ],
       ),

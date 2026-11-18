@@ -8,6 +8,7 @@ import '../state/settings.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
+import '../widgets/stitch.dart';
 import 'card_detail_screen.dart';
 import 'categories_screen.dart';
 import 'settings_screen.dart';
@@ -207,6 +208,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     final filtered = _accountFilter.isNotEmpty || !_includeCards;
     return Scaffold(
       appBar: AppBar(
+        centerTitle: true,
         title: _MonthSwitcher(
           month: _month,
           onPrevious: () => _changeMonth(-1),
@@ -286,9 +288,17 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             SizedBox(height: 2, child: _loading ? const LinearProgressIndicator() : null),
             _SummaryCard(page: page),
             if (page.days.every((d) => d.items.isEmpty))
-              const Padding(
-                padding: EdgeInsets.all(32),
-                child: Text('Nenhum lançamento neste mês', textAlign: TextAlign.center),
+              Padding(
+                padding: const EdgeInsets.all(32),
+                child: Text(
+                  'Nenhum ponto dado neste mês ainda.',
+                  textAlign: TextAlign.center,
+                  style: SewFonts.display(TextStyle(
+                    fontSize: 16,
+                    fontStyle: FontStyle.italic,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  )),
+                ),
               ),
             for (final day in page.days) ...[
               _DayHeader(
@@ -318,8 +328,11 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                   child: Text(
-                    'Nenhum lançamento hoje',
-                    style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    'Nada por aqui hoje.',
+                    style: SewFonts.display(TextStyle(
+                      fontStyle: FontStyle.italic,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    )),
                   ),
                 ),
             ],
@@ -352,11 +365,13 @@ class _MonthSwitcher extends StatelessWidget {
         Flexible(
           child: TextButton(
             onPressed: onTapTitle,
-            child: Text(
-              monthTitle(month),
-              style: Theme.of(context).textTheme.titleMedium,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                monthTitle(month),
+                style: Theme.of(context).textTheme.titleLarge?.copyWith(fontSize: 20),
+                maxLines: 1,
+              ),
             ),
           ),
         ),
@@ -376,14 +391,15 @@ class _SummaryCard extends StatelessWidget {
     final theme = Theme.of(context);
     final colors = FinanceColors.of(context);
     final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
+    final caps = muted?.copyWith(letterSpacing: 1.1, fontWeight: FontWeight.w600);
 
     Widget stat(String label, int value, Color? color) => Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: muted),
-              const SizedBox(height: 2),
-              Text(money(value), style: theme.textTheme.titleSmall?.copyWith(color: color)),
+              Text(label.toUpperCase(), style: caps),
+              const SizedBox(height: 4),
+              Amount(value, color: color, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
             ],
           ),
         );
@@ -392,41 +408,40 @@ class _SummaryCard extends StatelessWidget {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text(label, style: muted),
+              Text(label.toUpperCase(), style: caps),
               const SizedBox(height: 2),
-              Amount(value, style: theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w600)),
+              HeroAmount(value),
               Text(hint, style: muted),
             ],
           ),
         );
 
-    return Card(
-      margin: const EdgeInsets.fromLTRB(16, 12, 16, 8),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                stat('Receitas', page.income, colors.income),
-                stat('Despesas', page.expense, colors.expense),
-                stat('No cartão', page.cardExpense, null),
-              ],
-            ),
-            const Divider(height: 24),
-            Row(
-              children: [
-                balance('Realizado', 'só o que já foi pago', page.closing.realized),
-                balance('Previsto', 'pagos + pendentes', page.closing.projected),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Text('Saldo das contas no fim do mês', style: muted),
-            ),
-          ],
-        ),
+    return StitchedCard(
+      child: Column(
+        children: [
+          Row(
+            children: [
+              balance('Realizado', 'só o que já foi pago', page.closing.realized),
+              const SizedBox(width: 12),
+              balance('Previsto', 'pagos + pendentes', page.closing.projected),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: Text('Saldo das contas no fim do mês', style: muted?.copyWith(fontStyle: FontStyle.italic)),
+          ),
+          const SizedBox(height: 14),
+          const Stitch(),
+          const SizedBox(height: 14),
+          Row(
+            children: [
+              stat('Receitas', page.income, colors.income),
+              stat('Despesas', page.expense, colors.expense),
+              stat('No cartão', page.cardExpense, null),
+            ],
+          ),
+        ],
       ),
     );
   }
@@ -442,6 +457,7 @@ class _DayHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final colors = FinanceColors.of(context);
     final label = theme.textTheme.labelSmall?.copyWith(color: scheme.onSurfaceVariant);
     final value = theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600);
 
@@ -455,31 +471,62 @@ class _DayHeader extends StatelessWidget {
         );
 
     return Container(
-      margin: const EdgeInsets.only(top: 8),
-      padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-      decoration: BoxDecoration(
-        color: isToday ? scheme.primaryContainer : scheme.surfaceContainerLow,
-        border: Border(bottom: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.5))),
-      ),
-      child: Row(
+      margin: const EdgeInsets.only(top: 10),
+      color: isToday ? colors.accent.withValues(alpha: 0.08) : null,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 10, 16, 8),
+            child: Row(
               children: [
-                Text(dayTitle(day.date), style: theme.textTheme.titleSmall),
-                if (isToday)
-                  Text('Hoje', style: theme.textTheme.labelSmall?.copyWith(color: scheme.primary)),
+                Expanded(
+                  child: Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          dayTitle(day.date),
+                          style: SewFonts.display(TextStyle(
+                            fontSize: 17,
+                            fontWeight: FontWeight.w600,
+                            letterSpacing: -0.2,
+                            color: scheme.onSurface,
+                          )),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (isToday) ...[
+                        const SizedBox(width: 8),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: colors.accent,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            'Hoje',
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: theme.colorScheme.onSecondary,
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    line('realizado', day.balance.realized),
+                    line('previsto', day.balance.projected),
+                  ],
+                ),
               ],
             ),
           ),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.end,
-            children: [
-              line('realizado', day.balance.realized),
-              line('previsto', day.balance.projected),
-            ],
-          ),
+          Stitch(indent: 16, endIndent: 16, color: isToday ? colors.accent : null),
         ],
       ),
     );
@@ -589,10 +636,9 @@ class _TxTile extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             money(tx.amount),
-            style: theme.textTheme.bodyLarge?.copyWith(
+            style: SewFonts.mono(theme.textTheme.bodyMedium).copyWith(
               color: tx.affectsBalance ? amountColor : amountColor.withValues(alpha: 0.7),
               fontWeight: FontWeight.w600,
-              fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
           SizedBox(
@@ -667,10 +713,9 @@ class _InvoiceTile extends StatelessWidget {
           const SizedBox(width: 8),
           Text(
             money(shown),
-            style: theme.textTheme.bodyLarge?.copyWith(
+            style: SewFonts.mono(theme.textTheme.bodyMedium).copyWith(
               color: colors.expense,
               fontWeight: FontWeight.w600,
-              fontFeatures: const [FontFeature.tabularFigures()],
             ),
           ),
           SizedBox(

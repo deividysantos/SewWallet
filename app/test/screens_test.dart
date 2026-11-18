@@ -8,6 +8,7 @@ import 'package:sewwallet/screens/cashflow_report_screen.dart';
 import 'package:sewwallet/screens/settings_screen.dart';
 import 'package:sewwallet/screens/transactions_screen.dart';
 import 'package:sewwallet/state/settings.dart';
+import 'package:sewwallet/theme.dart';
 import 'package:sewwallet/screens/categories_screen.dart';
 import 'package:sewwallet/screens/home_shell.dart';
 import 'package:sewwallet/screens/reports_screen.dart';
@@ -22,6 +23,7 @@ void main() {
   setUpAll(() async {
     await initializeDateFormatting('pt_BR');
     SharedPreferences.setMockInitialValues({});
+    SewFonts.enabled = false; // sem rede nos testes
   });
 
   group('Novo lançamento', () {

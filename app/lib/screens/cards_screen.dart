@@ -6,6 +6,7 @@ import '../state/catalog.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
+import '../widgets/stitch.dart';
 import 'card_detail_screen.dart';
 import 'card_form.dart';
 
@@ -107,7 +108,11 @@ class _CardTile extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Container(height: 6, color: color),
+            // Pesponto na cor do cartão.
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Stitch(color: color.withValues(alpha: 0.8), indent: 14, endIndent: 14),
+            ),
             Padding(
               padding: const EdgeInsets.all(16),
               child: Column(

@@ -123,6 +123,7 @@ class FakeApi {
 
 /// Monta [home] com tela de celular, sessão logada na API falsa e catálogo carregado.
 Future<FakeApi> pumpScreen(WidgetTester tester, Widget home, {FakeApi? api, AppSettings? settings}) async {
+  SewFonts.enabled = false; // sem rede nos testes
   tester.view.physicalSize = const Size(400, 860);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
