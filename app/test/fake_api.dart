@@ -98,6 +98,9 @@ class FakeApi {
     'DELETE /transactions/t1': (_) => {'deleted': 1},
     'PATCH /transactions/t1/status': (_) => {'id': 't1'},
     'POST /accounts': (_) => {'id': 'a3'},
+    'POST /categories': (_) => {'id': 'k3'},
+    'PUT /categories/k1': (_) => {'id': 'k1'},
+    'DELETE /categories/k1': (_) => null,
     'POST /cards': (_) => {'id': 'c2'},
     'GET /reports/cashflow': (_) => {
           'mode': 'cumulative', 'basis': 'projected', 'granularity': 'month',

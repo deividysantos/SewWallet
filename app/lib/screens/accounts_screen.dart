@@ -7,6 +7,7 @@ import '../state/session.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
 import '../widgets/money_field.dart';
+import 'categories_screen.dart';
 
 IconData accountIcon(String type) => switch (type) {
       'SAVINGS' => Icons.savings_outlined,
@@ -87,7 +88,16 @@ class AccountsScreen extends StatelessWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Contas')),
+      appBar: AppBar(
+        title: const Text('Contas'),
+        actions: [
+          IconButton(
+            tooltip: 'Categorias',
+            icon: const Icon(Icons.label_outline),
+            onPressed: () => CategoriesScreen.open(context),
+          ),
+        ],
+      ),
       body: body,
       floatingActionButton: FloatingActionButton(
         tooltip: 'Nova conta',

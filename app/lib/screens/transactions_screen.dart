@@ -8,6 +8,7 @@ import '../theme.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
 import 'card_detail_screen.dart';
+import 'categories_screen.dart';
 import 'transaction_form.dart';
 
 /// Lançamentos do mês agrupados por dia, com o saldo das contas no fim de cada dia.
@@ -202,9 +203,18 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
           PopupMenuButton<String>(
             tooltip: 'Menu',
             onSelected: (v) {
+              if (v == 'categories') CategoriesScreen.open(context);
               if (v == 'logout') session.logout();
             },
             itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'categories',
+                child: ListTile(
+                  leading: Icon(Icons.label_outline),
+                  title: Text('Categorias'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
               PopupMenuItem(
                 value: 'logout',
                 child: ListTile(

@@ -4,6 +4,7 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:sewwallet/models/ledger.dart';
 import 'package:sewwallet/screens/accounts_screen.dart';
 import 'package:sewwallet/screens/cards_screen.dart';
+import 'package:sewwallet/screens/categories_screen.dart';
 import 'package:sewwallet/screens/home_shell.dart';
 import 'package:sewwallet/screens/reports_screen.dart';
 import 'package:sewwallet/screens/transaction_form.dart';
@@ -195,6 +196,59 @@ void main() {
     final q = api.calls('GET', '/reports/cashflow').last.url.queryParameters;
     expect(q['granularity'], 'week');
     expect(q['basis'], 'projected');
+  });
+
+  group('Categorias', () {
+    testWidgets('lista por tipo e cria categoria com ícone', (tester) async {
+      final api = await pumpScreen(tester, const CategoriesScreen());
+      expect(find.text('Compras'), findsOneWidget);
+      expect(find.text('Salário'), findsNothing);
+      await tapText(tester, 'Receitas');
+      expect(find.text('Salário'), findsOneWidget);
+      await tapText(tester, 'Despesas');
+
+      await tester.tap(find.byTooltip('Nova categoria'));
+      await tester.pumpAndSettle();
+      await tester.enterText(field('Nome'), 'Pets');
+      final pets = find.byTooltip('pets');
+      await tester.ensureVisible(pets);
+      await tester.tap(pets);
+      await tester.pumpAndSettle();
+      await tapText(tester, 'Salvar');
+
+      expect(api.lastBody('POST', '/categories'), {'name': 'Pets', 'color': '#820AD1', 'icon': 'pets', 'kind': 'EXPENSE'});
+    });
+
+    testWidgets('editar não muda o tipo; excluir pede confirmação', (tester) async {
+      final api = await pumpScreen(tester, const CategoriesScreen());
+      await tapText(tester, 'Compras');
+      await tester.enterText(field('Nome'), 'Compras online');
+      await tapText(tester, 'Salvar');
+      final body = api.lastBody('PUT', '/categories/k1');
+      expect(body['name'], 'Compras online');
+      expect(body.containsKey('kind'), isFalse);
+
+      await tapText(tester, 'Compras');
+      await tester.tap(find.byTooltip('Excluir'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('ficam sem categoria'), findsOneWidget);
+      await tapText(tester, 'Excluir');
+      expect(api.calls('DELETE', '/categories/k1'), hasLength(1));
+    });
+  });
+
+  testWidgets('relatórios: filtro por conta', (tester) async {
+    final api = await pumpScreen(tester, const ReportsScreen());
+    await tapText(tester, 'Todas as contas');
+    await tapText(tester, 'Itaú');
+    await tapText(tester, 'Aplicar');
+    expect(api.calls('GET', '/reports/cashflow').last.url.queryParameters['accountIds'], 'a2');
+    expect(find.text('Itaú'), findsOneWidget, reason: 'o botão mostra a conta escolhida');
+
+    await tapText(tester, 'Itaú');
+    await tapText(tester, 'Todas');
+    await tapText(tester, 'Aplicar');
+    expect(api.calls('GET', '/reports/cashflow').last.url.queryParameters.containsKey('accountIds'), isFalse);
   });
 
   testWidgets('navega por todas as abas', (tester) async {

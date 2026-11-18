@@ -28,6 +28,9 @@ class _ReportsScreenState extends State<ReportsScreen> {
   bool _projected = true;
   DateTimeRange? _range;
 
+  /// Vazio = todas as contas.
+  Set<String> _accountIds = {};
+
   CashflowReport? _report;
   bool _loading = true;
   String? _error;
@@ -68,6 +71,7 @@ class _ReportsScreenState extends State<ReportsScreen> {
         'basis': _projected ? 'projected' : 'realized',
         if (_range != null) 'from': apiDate(_range!.start),
         if (_range != null) 'to': apiDate(_range!.end),
+        if (_accountIds.isNotEmpty) 'accountIds': _accountIds.join(','),
       });
       if (mounted) setState(() => _report = CashflowReport.fromJson(data as Map<String, dynamic>));
     } catch (e) {
@@ -89,6 +93,23 @@ class _ReportsScreenState extends State<ReportsScreen> {
     if (picked == null) return;
     setState(() => _range = picked);
     _load();
+  }
+
+  Future<void> _pickAccounts() async {
+    final picked = await showModalBottomSheet<Set<String>>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (_) => _AccountsSheet(accounts: _catalog.accounts, selected: _accountIds),
+    );
+    if (picked == null) return;
+    _set(() => _accountIds = picked);
+  }
+
+  String get _accountsLabel {
+    if (_accountIds.isEmpty) return 'Todas as contas';
+    if (_accountIds.length == 1) return _catalog.account(_accountIds.first)?.name ?? '1 conta';
+    return '${_accountIds.length} contas';
   }
 
   void _set(VoidCallback change) {
@@ -172,6 +193,15 @@ class _ReportsScreenState extends State<ReportsScreen> {
                         TextButton(onPressed: () => _set(() => _range = null), child: const Text('Padrão')),
                     ],
                   ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: _pickAccounts,
+                    icon: Badge(
+                      isLabelVisible: _accountIds.isNotEmpty,
+                      child: const Icon(Icons.account_balance_outlined, size: 18),
+                    ),
+                    label: Text(_accountsLabel, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
                   const SizedBox(height: 6),
                   Text(
                     _cumulative
@@ -197,6 +227,69 @@ class _ReportsScreenState extends State<ReportsScreen> {
             ],
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AccountsSheet extends StatefulWidget {
+  const _AccountsSheet({required this.accounts, required this.selected});
+
+  final List<Account> accounts;
+  final Set<String> selected;
+
+  @override
+  State<_AccountsSheet> createState() => _AccountsSheetState();
+}
+
+class _AccountsSheetState extends State<_AccountsSheet> {
+  late Set<String> _selected = {...widget.selected};
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return SafeArea(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 4),
+            child: Text('Contas no relatório', style: theme.textTheme.titleMedium),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+            child: Text(
+              'Nenhuma marcada = todas. Transferências entre contas marcadas não contam como entrada/saída; '
+              'para uma conta fora da seleção, contam.',
+              style: theme.textTheme.bodySmall,
+            ),
+          ),
+          Flexible(
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final a in widget.accounts)
+                  CheckboxListTile(
+                    value: _selected.contains(a.id),
+                    onChanged: (v) => setState(() => v == true ? _selected.add(a.id) : _selected.remove(a.id)),
+                    title: Text(a.archived ? '${a.name} (arquivada)' : a.name),
+                    secondary: CircleAvatar(radius: 6, backgroundColor: hexColor(a.color) ?? theme.colorScheme.primary),
+                  ),
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            child: Row(
+              children: [
+                TextButton(onPressed: () => setState(() => _selected = {}), child: const Text('Todas')),
+                const Spacer(),
+                FilledButton(onPressed: () => Navigator.pop(context, _selected), child: const Text('Aplicar')),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
