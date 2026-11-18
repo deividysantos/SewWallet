@@ -34,6 +34,8 @@ docker compose exec api npm test  # testes das regras (faturas, saldos, fluxo de
 docker compose exec api npm run db:reset   # apaga tudo e recria os dados de exemplo
 ```
 
+- **App (web): http://localhost:8080.** Recompila sozinho quando você salva algo em `app/`
+  (leva ~2 min); depois é só recarregar a página. Acompanhe com `docker compose logs -f web`.
 - API: http://localhost:3000 (Postgres exposto em `localhost:5433` para ferramentas de banco)
 - Login de exemplo: veja o topo de [api/prisma/seed.ts](api/prisma/seed.ts).
   Os dados são fictícios e as datas são relativas a hoje.

@@ -145,14 +145,13 @@ transactionsRouter.get('/', async (req, res) => {
     else if (tx.type === 'EXPENSE') summary.expense += tx.amount;
   }
 
-  const showInvoices = !catFilter && !search && (!q.type || q.type === 'EXPENSE');
+  // A fatura aparece só enquanto tem valor a pagar; depois de paga, quem aparece é o lançamento de pagamento.
+  const showInvoices = !catFilter && !search && (!q.type || q.type === 'EXPENSE') && q.status !== 'PAID';
   if (showInvoices) {
     for (const inv of ledger.invoices) {
-      if (inv.dueDate < from || inv.dueDate > to || inv.total <= 0) continue;
+      if (inv.dueDate < from || inv.dueDate > to || inv.remaining <= 0) continue;
       if (cardFilter && !cardFilter.has(inv.cardId)) continue;
       if (!touchesAccounts([inv.paymentAccountId])) continue;
-      if (q.status === 'PENDING' && inv.remaining <= 0) continue;
-      if (q.status === 'PAID' && inv.remaining > 0) continue;
       push(inv.dueDate, dto.invoice(inv));
     }
   }

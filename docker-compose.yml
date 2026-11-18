@@ -44,6 +44,27 @@ services:
       db:
         condition: service_healthy
 
+  # App Flutter compilado para web. Recompila sozinho ao salvar; depois é só dar F5.
+  web:
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    environment:
+      API_URL: http://localhost:3000
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./app:/app
+      - ./docker/app-dev.sh:/docker/app-dev.sh:ro
+      - app-dart-tool:/app/.dart_tool
+      - app-build:/app/build
+      - pub-cache:/pub-cache
+    depends_on:
+      - api
+
 volumes:
   db-data:
   api-node-modules:
+  app-dart-tool:
+  app-build:
+  pub-cache:
