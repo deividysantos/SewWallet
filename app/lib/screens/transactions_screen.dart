@@ -4,11 +4,13 @@ import 'package:provider/provider.dart';
 import '../models/ledger.dart';
 import '../state/catalog.dart';
 import '../state/session.dart';
+import '../state/settings.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
 import 'card_detail_screen.dart';
 import 'categories_screen.dart';
+import 'settings_screen.dart';
 import 'transaction_form.dart';
 
 /// Lançamentos do mês agrupados por dia, com o saldo das contas no fim de cada dia.
@@ -32,6 +34,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   final _todayKey = GlobalKey();
   final _scroll = ScrollController();
   late final Catalog _catalog;
+  late final AppSettings _settings;
+  late CardDateView _cardDateView;
   int _seenRevision = -1;
 
   @override
@@ -40,6 +44,16 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     _catalog = context.read<Catalog>();
     _seenRevision = _catalog.revision;
     _catalog.addListener(_onCatalog);
+    _settings = context.read<AppSettings>();
+    _cardDateView = _settings.cardDateView;
+    _settings.addListener(_onSettings);
+    _load();
+  }
+
+  /// Mudou a visão das compras no cartão (data da compra × do pagamento).
+  void _onSettings() {
+    if (_settings.cardDateView == _cardDateView) return;
+    _cardDateView = _settings.cardDateView;
     _load();
   }
 
@@ -53,6 +67,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   @override
   void dispose() {
     _catalog.removeListener(_onCatalog);
+    _settings.removeListener(_onSettings);
     _scroll.dispose();
     super.dispose();
   }
@@ -71,6 +86,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         'to': apiDate(to),
         'accountIds': _accountFilter.join(','),
         'includeCards': '$_includeCards',
+        'cardDate': _cardDateView.name,
       });
       if (!mounted) return;
       setState(() => _page = TransactionsPage.fromJson(data as Map<String, dynamic>));
@@ -163,7 +179,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 
   Future<void> _openFilters() async {
-    final result = await showModalBottomSheet<(Set<String>, bool)>(
+    final result = await showModalBottomSheet<(Set<String>, bool, CardDateView)>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -171,13 +187,16 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         accounts: _catalog.activeAccounts,
         selected: _accountFilter,
         includeCards: _includeCards,
+        cardDateView: _cardDateView,
       ),
     );
     if (result == null) return;
     setState(() {
       _accountFilter = result.$1;
       _includeCards = result.$2;
+      _cardDateView = result.$3; // antes de salvar, para o listener não recarregar de novo
     });
+    _settings.setCardDateView(result.$3);
     _load();
   }
 
@@ -204,9 +223,18 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
             tooltip: 'Menu',
             onSelected: (v) {
               if (v == 'categories') CategoriesScreen.open(context);
+              if (v == 'settings') SettingsScreen.open(context);
               if (v == 'logout') session.logout();
             },
             itemBuilder: (_) => [
+              const PopupMenuItem(
+                value: 'settings',
+                child: ListTile(
+                  leading: Icon(Icons.settings_outlined),
+                  title: Text('Configurações'),
+                  contentPadding: EdgeInsets.zero,
+                ),
+              ),
               const PopupMenuItem(
                 value: 'categories',
                 child: ListTile(
@@ -272,6 +300,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 switch (item) {
                   TxItem t => _TxTile(
                       tx: t,
+                      byPaymentDate: _cardDateView == CardDateView.payment,
                       busy: _busyId == t.id,
                       onTogglePaid: () => _togglePaid(t),
                       onTap: () => TransactionForm.open(context, existing: t),
@@ -479,9 +508,18 @@ class _Tag extends StatelessWidget {
 }
 
 class _TxTile extends StatelessWidget {
-  const _TxTile({required this.tx, required this.busy, required this.onTogglePaid, this.onTap});
+  const _TxTile({
+    required this.tx,
+    required this.busy,
+    required this.onTogglePaid,
+    this.onTap,
+    this.byPaymentDate = false,
+  });
 
   final TxItem tx;
+
+  /// A lista está agrupada pelo vencimento da fatura: a etiqueta mostra a data da compra.
+  final bool byPaymentDate;
   final bool busy;
   final VoidCallback onTogglePaid;
   final VoidCallback? onTap;
@@ -503,7 +541,11 @@ class _TxTile extends StatelessWidget {
     final tags = <Widget>[
       if (tx.card != null)
         _Tag(
-          tx.invoiceDueDate == null ? tx.card!.name : '${tx.card!.name} · fatura ${shortDate(tx.invoiceDueDate!)}',
+          byPaymentDate
+              ? '${tx.card!.name} · compra ${shortDate(tx.date)}'
+              : tx.invoiceDueDate == null
+                  ? tx.card!.name
+                  : '${tx.card!.name} · fatura ${shortDate(tx.invoiceDueDate!)}',
           icon: Icons.credit_card,
         )
       else if (tx.type == TxType.transfer)
@@ -654,11 +696,17 @@ class _InvoiceTile extends StatelessWidget {
 }
 
 class _FilterSheet extends StatefulWidget {
-  const _FilterSheet({required this.accounts, required this.selected, required this.includeCards});
+  const _FilterSheet({
+    required this.accounts,
+    required this.selected,
+    required this.includeCards,
+    required this.cardDateView,
+  });
 
   final List<Account> accounts;
   final Set<String> selected;
   final bool includeCards;
+  final CardDateView cardDateView;
 
   @override
   State<_FilterSheet> createState() => _FilterSheetState();
@@ -667,6 +715,7 @@ class _FilterSheet extends StatefulWidget {
 class _FilterSheetState extends State<_FilterSheet> {
   late Set<String> _selected = {...widget.selected};
   late bool _includeCards = widget.includeCards;
+  late CardDateView _cardDate = widget.cardDateView;
 
   @override
   Widget build(BuildContext context) {
@@ -704,6 +753,26 @@ class _FilterSheetState extends State<_FilterSheet> {
               title: const Text('Mostrar compras no cartão'),
               subtitle: const Text('Elas não mexem no saldo; a fatura sim'),
             ),
+            if (_includeCards)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Text('Compras no cartão pela', style: theme.textTheme.bodySmall),
+                    const SizedBox(height: 6),
+                    SegmentedButton<CardDateView>(
+                      segments: const [
+                        ButtonSegment(value: CardDateView.purchase, label: Text('Data da compra')),
+                        ButtonSegment(value: CardDateView.payment, label: Text('Data do pagamento')),
+                      ],
+                      selected: {_cardDate},
+                      showSelectedIcon: false,
+                      onSelectionChanged: (s) => setState(() => _cardDate = s.first),
+                    ),
+                  ],
+                ),
+              ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Row(
@@ -717,7 +786,7 @@ class _FilterSheetState extends State<_FilterSheet> {
                   ),
                   const Spacer(),
                   FilledButton(
-                    onPressed: () => Navigator.pop(context, (_selected, _includeCards)),
+                    onPressed: () => Navigator.pop(context, (_selected, _includeCards, _cardDate)),
                     child: const Text('Aplicar'),
                   ),
                 ],

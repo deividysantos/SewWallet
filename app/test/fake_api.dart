@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:provider/provider.dart';
 import 'package:sewwallet/state/catalog.dart';
 import 'package:sewwallet/state/session.dart';
+import 'package:sewwallet/state/settings.dart';
 import 'package:sewwallet/theme.dart';
 import 'package:sewwallet/util/format.dart';
 
@@ -121,7 +122,7 @@ class FakeApi {
 }
 
 /// Monta [home] com tela de celular, sessão logada na API falsa e catálogo carregado.
-Future<FakeApi> pumpScreen(WidgetTester tester, Widget home, {FakeApi? api}) async {
+Future<FakeApi> pumpScreen(WidgetTester tester, Widget home, {FakeApi? api, AppSettings? settings}) async {
   tester.view.physicalSize = const Size(400, 860);
   tester.view.devicePixelRatio = 1.0;
   addTearDown(tester.view.reset);
@@ -138,6 +139,7 @@ Future<FakeApi> pumpScreen(WidgetTester tester, Widget home, {FakeApi? api}) asy
       providers: [
         ChangeNotifierProvider.value(value: session),
         ChangeNotifierProvider.value(value: catalog),
+        ChangeNotifierProvider.value(value: settings ?? AppSettings()),
       ],
       child: MaterialApp(
         theme: buildTheme(Brightness.light),

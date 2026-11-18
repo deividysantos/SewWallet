@@ -31,6 +31,8 @@ const listQuery = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
+  /** purchase: compras no cartão na data da compra. payment: no vencimento da fatura (fluxo de caixa). */
+  cardDate: z.enum(['purchase', 'payment']).default('purchase'),
 });
 
 const normalize = (s: string) =>
@@ -125,9 +127,31 @@ transactionsRouter.get('/', async (req, res) => {
     byDay.set(date, list);
   };
   const summary = { income: 0, expense: 0, cardExpense: 0 };
+  const byPayment = q.cardDate === 'payment';
+  const invoiceById = new Map(ledger.invoices.map((i) => [i.id, i]));
+  /** Dia em que o lançamento aparece na lista. */
+  const listDate = (tx: TxView): DateStr => {
+    if (byPayment && tx.cardId && tx.invoiceId) return invoiceById.get(tx.invoiceId)?.dueDate ?? tx.date;
+    return tx.date;
+  };
+
+  // A fatura aparece só enquanto tem valor a pagar; depois de paga, quem aparece é o lançamento de pagamento.
+  // Na visão por pagamento ela vem antes, seguida das compras que a compõem.
+  const showInvoices = !catFilter && !search && (!q.type || q.type === 'EXPENSE') && q.status !== 'PAID';
+  const pushInvoices = () => {
+    if (!showInvoices) return;
+    for (const inv of ledger.invoices) {
+      if (inv.dueDate < from || inv.dueDate > to || inv.remaining <= 0) continue;
+      if (cardFilter && !cardFilter.has(inv.cardId)) continue;
+      if (!touchesAccounts([inv.paymentAccountId])) continue;
+      push(inv.dueDate, dto.invoice(inv));
+    }
+  };
+  if (byPayment) pushInvoices();
 
   for (const tx of ledger.txs) {
-    if (tx.date < from || tx.date > to) continue;
+    const date = listDate(tx);
+    if (date < from || date > to) continue;
     if (tx.cardId && (!q.includeCards || (cardFilter && !cardFilter.has(tx.cardId)))) continue;
     if (!tx.cardId && cardFilter) continue;
     const payAcc = tx.cardId ? dto.cardById.get(tx.cardId)?.paymentAccountId : null;
@@ -137,24 +161,14 @@ transactionsRouter.get('/', async (req, res) => {
     if (q.status && tx.status !== q.status) continue;
     if (search && !normalize(tx.description).includes(search)) continue;
 
-    push(tx.date, dto.tx(tx));
+    push(date, dto.tx(tx));
     if (tx.cardId) {
       if (tx.type === 'EXPENSE') summary.cardExpense += tx.amount;
       else if (tx.type === 'INCOME') summary.cardExpense -= tx.amount;
     } else if (tx.type === 'INCOME') summary.income += tx.amount;
     else if (tx.type === 'EXPENSE') summary.expense += tx.amount;
   }
-
-  // A fatura aparece só enquanto tem valor a pagar; depois de paga, quem aparece é o lançamento de pagamento.
-  const showInvoices = !catFilter && !search && (!q.type || q.type === 'EXPENSE') && q.status !== 'PAID';
-  if (showInvoices) {
-    for (const inv of ledger.invoices) {
-      if (inv.dueDate < from || inv.dueDate > to || inv.remaining <= 0) continue;
-      if (cardFilter && !cardFilter.has(inv.cardId)) continue;
-      if (!touchesAccounts([inv.paymentAccountId])) continue;
-      push(inv.dueDate, dto.invoice(inv));
-    }
-  }
+  if (!byPayment) pushInvoices();
 
   if (t >= from && t <= to && !byDay.has(t)) byDay.set(t, []);
   const days = [...byDay.keys()].sort();

@@ -4,6 +4,10 @@ import 'package:intl/date_symbol_data_local.dart';
 import 'package:sewwallet/models/ledger.dart';
 import 'package:sewwallet/screens/accounts_screen.dart';
 import 'package:sewwallet/screens/cards_screen.dart';
+import 'package:sewwallet/screens/cashflow_report_screen.dart';
+import 'package:sewwallet/screens/settings_screen.dart';
+import 'package:sewwallet/screens/transactions_screen.dart';
+import 'package:sewwallet/state/settings.dart';
 import 'package:sewwallet/screens/categories_screen.dart';
 import 'package:sewwallet/screens/home_shell.dart';
 import 'package:sewwallet/screens/reports_screen.dart';
@@ -184,11 +188,39 @@ void main() {
     expect(body['closingDayInNext'], isTrue);
   });
 
-  testWidgets('relatórios: totais, tabela e troca para "Só o período"', (tester) async {
+  testWidgets('relatórios: a aba lista os relatórios e abre o fluxo de caixa', (tester) async {
     final api = await pumpScreen(tester, const ReportsScreen());
+    expect(api.calls('GET', '/reports/cashflow'), isEmpty);
+    await tapText(tester, 'Fluxo de caixa');
+    expect(api.calls('GET', '/reports/cashflow'), hasLength(1));
+    expect(find.text('Saldo final'), findsWidgets);
+  });
+
+  testWidgets('fluxo de caixa: setas andam pelo período', (tester) async {
+    final api = await pumpScreen(tester, const CashflowReportScreen());
+    final first = api.calls('GET', '/reports/cashflow').last.url.queryParameters;
+    expect(first['granularity'], 'month');
+
+    await tester.tap(find.byTooltip('Próximo (ano)'));
+    await tester.pumpAndSettle();
+    final next = api.calls('GET', '/reports/cashflow').last.url.queryParameters;
+    final from0 = DateTime.parse(first['from']!);
+    final from1 = DateTime.parse(next['from']!);
+    expect(from1, DateTime(from0.year + 1, from0.month, 1));
+
+    await tester.tap(find.byTooltip('Anterior (ano)'));
+    await tester.pumpAndSettle();
+    expect(api.calls('GET', '/reports/cashflow').last.url.queryParameters['from'], first['from']);
+  });
+
+  testWidgets('relatórios: totais, tabela e troca para "Só o período"', (tester) async {
+    final api = await pumpScreen(tester, const CashflowReportScreen());
     expect(find.text('Saldo final'), findsWidgets);
     expect(find.text('Out/26'), findsWidgets);
+    expect(find.text('Só o período'), findsNothing, reason: 'filtros começam recolhidos');
 
+    await tester.tap(find.byTooltip('Mostrar filtros'));
+    await tester.pumpAndSettle();
     await tapText(tester, 'Só o período');
     expect(api.calls('GET', '/reports/cashflow').last.url.queryParameters['mode'], 'period');
 
@@ -238,12 +270,14 @@ void main() {
   });
 
   testWidgets('relatórios: filtro por conta', (tester) async {
-    final api = await pumpScreen(tester, const ReportsScreen());
+    final api = await pumpScreen(tester, const CashflowReportScreen());
+    await tester.tap(find.byTooltip('Mostrar filtros'));
+    await tester.pumpAndSettle();
     await tapText(tester, 'Todas as contas');
     await tapText(tester, 'Itaú');
     await tapText(tester, 'Aplicar');
     expect(api.calls('GET', '/reports/cashflow').last.url.queryParameters['accountIds'], 'a2');
-    expect(find.text('Itaú'), findsOneWidget, reason: 'o botão mostra a conta escolhida');
+    expect(find.text('Itaú'), findsWidgets, reason: 'o resumo e o botão mostram a conta escolhida');
 
     await tapText(tester, 'Itaú');
     await tapText(tester, 'Todas');
@@ -265,5 +299,39 @@ void main() {
     await tester.tap(find.byTooltip('Pendente — marcar como pago'));
     await tester.pumpAndSettle();
     expect(api.lastBody('PATCH', '/transactions/t1/status'), {'status': 'PAID'});
+  });
+
+  testWidgets('configurações: compras no cartão pela data do pagamento', (tester) async {
+    final settings = AppSettings();
+    final api = await pumpScreen(tester, const TransactionsScreen(), settings: settings);
+    expect(api.calls('GET', '/transactions').last.url.queryParameters['cardDate'], 'purchase');
+
+    await tester.tap(find.byTooltip('Menu'));
+    await tester.pumpAndSettle();
+    await tapText(tester, 'Configurações');
+    expect(find.byType(SettingsScreen), findsOneWidget);
+    await tapText(tester, 'Data do pagamento');
+
+    expect(settings.cardDateView, CardDateView.payment);
+    expect(api.calls('GET', '/transactions').last.url.queryParameters['cardDate'], 'payment');
+  });
+
+  testWidgets('novo lançamento: cria categoria sem sair do formulário', (tester) async {
+    final api = await pumpScreen(tester, launcher((ctx) => TransactionForm.open(ctx)));
+    await tapText(tester, 'abrir');
+    await tester.enterText(field('Valor'), '5000');
+    await tester.enterText(field('Descrição'), 'Ração');
+
+    await tapText(tester, 'Sem categoria');
+    await tapText(tester, 'Nova categoria…');
+    expect(find.text('Nova categoria'), findsOneWidget);
+    await tester.enterText(field('Nome'), 'Pets');
+    await tapText(tester, 'Salvar');
+
+    expect(api.lastBody('POST', '/categories')['kind'], 'EXPENSE');
+    expect(find.text('Novo lançamento'), findsOneWidget, reason: 'volta para o formulário');
+    expect(find.widgetWithText(TextFormField, 'Descrição'), findsOneWidget);
+    await tapText(tester, 'Salvar');
+    expect(api.lastBody('POST', '/transactions')['categoryId'], 'k3');
   });
 }

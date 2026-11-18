@@ -85,10 +85,17 @@ class CategoryForm extends StatefulWidget {
   final Category? existing;
   final bool income;
 
-  static Future<bool?> open(BuildContext context, {Category? existing, bool income = false}) =>
-      Navigator.of(context).push<bool>(
+  /// Retorna o id da categoria salva, `true` se excluiu, ou null se cancelou.
+  static Future<Object?> open(BuildContext context, {Category? existing, bool income = false}) =>
+      Navigator.of(context).push<Object?>(
         MaterialPageRoute(fullscreenDialog: true, builder: (_) => CategoryForm(existing: existing, income: income)),
       );
+
+  /// Cria uma categoria sem sair da tela atual; retorna o id dela (null se cancelou).
+  static Future<String?> create(BuildContext context, {required bool income}) async {
+    final r = await open(context, income: income);
+    return r is String ? r : null;
+  }
 
   @override
   State<CategoryForm> createState() => _CategoryFormState();
@@ -123,13 +130,15 @@ class _CategoryFormState extends State<CategoryForm> {
     };
     setState(() => _saving = true);
     try {
+      String? id = widget.existing?.id;
       if (_isEdit) {
-        await api.put('/categories/${widget.existing!.id}', body);
+        await api.put('/categories/$id', body);
       } else {
-        await api.post('/categories', body);
+        final created = await api.post('/categories', body);
+        if (created is Map) id = created['id'] as String?;
       }
       await catalog.refresh();
-      if (mounted) Navigator.pop(context, true);
+      if (mounted) Navigator.pop(context, id ?? true);
     } catch (e) {
       if (mounted) showSnack(context, e.toString());
     } finally {

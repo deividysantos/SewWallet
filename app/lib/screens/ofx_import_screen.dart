@@ -9,6 +9,7 @@ import '../state/catalog.dart';
 import '../state/session.dart';
 import '../theme.dart';
 import '../util/format.dart';
+import '../widgets/category_dropdown.dart';
 import '../widgets/common.dart';
 
 /// Escolhe um arquivo .ofx e abre a revisão da importação para a fatura que fecha em [refMonth].
@@ -337,7 +338,6 @@ class _NewEntryTile extends StatelessWidget {
     final theme = Theme.of(context);
     final muted = theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
     final e = entry;
-    final categories = context.watch<Catalog>().categories.where((c) => c.isIncome == e.isCredit).toList();
     final details = [
       shortDate(e.date),
       if (e.isCredit) 'Estorno',
@@ -382,28 +382,15 @@ class _NewEntryTile extends StatelessWidget {
                   textCapitalization: TextCapitalization.sentences,
                 ),
                 const SizedBox(height: 8),
-                DropdownButtonFormField<String?>(
-                  initialValue: categories.any((c) => c.id == e.categoryId) ? e.categoryId : null,
-                  isExpanded: true,
-                  items: [
-                    const DropdownMenuItem<String?>(value: null, child: Text('Sem categoria')),
-                    for (final c in categories)
-                      DropdownMenuItem<String?>(
-                        value: c.id,
-                        child: Row(children: [
-                          Icon(categoryIcon(c.icon), size: 18, color: hexColor(c.color)),
-                          const SizedBox(width: 8),
-                          Flexible(child: Text(c.name, overflow: TextOverflow.ellipsis)),
-                        ]),
-                      ),
-                  ],
-                  decoration: const InputDecoration(labelText: 'Categoria', isDense: true),
-                  onChanged: e.include
-                      ? (v) {
-                          e.categoryId = v;
-                          onChanged();
-                        }
-                      : null,
+                CategoryDropdown(
+                  income: e.isCredit,
+                  value: e.categoryId,
+                  dense: true,
+                  enabled: e.include,
+                  onChanged: (v) {
+                    e.categoryId = v;
+                    onChanged();
+                  },
                 ),
               ]),
             ),

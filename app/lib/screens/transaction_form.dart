@@ -6,6 +6,7 @@ import '../state/catalog.dart';
 import '../state/session.dart';
 import '../util/format.dart';
 import '../util/invoice.dart';
+import '../widgets/category_dropdown.dart';
 import '../widgets/common.dart';
 import '../widgets/money_field.dart';
 
@@ -265,7 +266,6 @@ class _TransactionFormState extends State<TransactionForm> {
     final theme = Theme.of(context);
     final accounts = catalog.activeAccounts;
     final cards = catalog.activeCards;
-    final categories = catalog.categories.where((c) => c.isIncome == (_type == TxType.income)).toList();
     final card = catalog.card(_cardId);
 
     if (accounts.isEmpty) {
@@ -393,22 +393,9 @@ class _TransactionFormState extends State<TransactionForm> {
                   validator: (v) => v == null ? 'Escolha a conta' : null,
                 ),
               const SizedBox(height: 16),
-              DropdownButtonFormField<String?>(
-                key: ValueKey('cat-$_type'),
-                initialValue: categories.any((c) => c.id == _categoryId) ? _categoryId : null,
-                items: [
-                  const DropdownMenuItem<String?>(value: null, child: Text('Sem categoria')),
-                  for (final c in categories)
-                    DropdownMenuItem<String?>(
-                      value: c.id,
-                      child: Row(children: [
-                        Icon(categoryIcon(c.icon), size: 18, color: hexColor(c.color)),
-                        const SizedBox(width: 8),
-                        Text(c.name),
-                      ]),
-                    ),
-                ],
-                decoration: const InputDecoration(labelText: 'Categoria'),
+              CategoryDropdown(
+                income: _type == TxType.income,
+                value: _categoryId,
                 onChanged: (v) => setState(() => _categoryId = v),
               ),
             ],

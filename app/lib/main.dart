@@ -8,6 +8,7 @@ import 'screens/home_shell.dart';
 import 'screens/login_screen.dart';
 import 'state/catalog.dart';
 import 'state/session.dart';
+import 'state/settings.dart';
 import 'theme.dart';
 
 Future<void> main() async {
@@ -18,12 +19,15 @@ Future<void> main() async {
   final session = Session();
   await session.restore();
   final catalog = Catalog(session);
+  final settings = AppSettings();
+  await settings.restore();
 
   runApp(
     MultiProvider(
       providers: [
         ChangeNotifierProvider.value(value: session),
         ChangeNotifierProvider.value(value: catalog),
+        ChangeNotifierProvider.value(value: settings),
       ],
       child: const SewWalletApp(),
     ),
