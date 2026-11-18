@@ -84,63 +84,91 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
   /// Segunda-feira da semana de [d].
   static DateTime _startOfWeek(DateTime d) => DateTime(d.year, d.month, d.day - (d.weekday - 1));
 
+  /// Mês de calendário exibido nas visões por dia e por semana (como na tela inicial).
+  DateTime get _month {
+    final t = _today();
+    return DateTime(t.year, t.month + _offset);
+  }
+
+  /// Ano de calendário exibido na visão por mês.
+  int get _year => _today().year + _offset;
+
+  /// Quantos meses inteiros o período específico cobre (null se não começa no dia 1 e
+  /// termina no último dia de um mês). Assim as setas andam por mês, sem errar a
+  /// quantidade de dias de cada um.
+  static int? _wholeMonths(DateTimeRange r) {
+    final endsAtMonthEnd = DateTime(r.end.year, r.end.month + 1, 0).day == r.end.day;
+    if (r.start.day != 1 || !endsAtMonthEnd) return null;
+    return (r.end.year - r.start.year) * 12 + r.end.month - r.start.month + 1;
+  }
+
   DateTimeRange get _window {
     final custom = _custom;
     if (custom != null) {
-      final days = custom.end.difference(custom.start).inDays + 1;
-      final shift = days * _offset;
+      final months = _wholeMonths(custom);
+      if (months != null) {
+        final start = DateTime(custom.start.year, custom.start.month + months * _offset, 1);
+        return DateTimeRange(start: start, end: DateTime(start.year, start.month + months, 0));
+      }
+      final shift = (custom.end.difference(custom.start).inDays + 1) * _offset;
       return DateTimeRange(
         start: DateTime(custom.start.year, custom.start.month, custom.start.day + shift),
         end: DateTime(custom.end.year, custom.end.month, custom.end.day + shift),
       );
     }
-    final t = _today();
     switch (_gran) {
       case _Gran.day:
-        return DateTimeRange(
-          start: DateTime(t.year, t.month + _offset, 1),
-          end: DateTime(t.year, t.month + _offset + 1, 0),
-        );
+        final m = _month;
+        return DateTimeRange(start: m, end: DateTime(m.year, m.month + 1, 0));
       case _Gran.week:
-        final first = _startOfWeek(DateTime(t.year, t.month, t.day - 28));
-        final start = DateTime(first.year, first.month, first.day + 91 * _offset);
-        return DateTimeRange(start: start, end: DateTime(start.year, start.month, start.day + 90));
+        // Semanas (seg–dom) que tocam o mês.
+        final m = _month;
+        final last = DateTime(m.year, m.month + 1, 0);
+        final start = _startOfWeek(m);
+        final lastMonday = _startOfWeek(last);
+        return DateTimeRange(start: start, end: DateTime(lastMonday.year, lastMonday.month, lastMonday.day + 6));
       case _Gran.month:
-        final start = DateTime(t.year, t.month - 5 + 12 * _offset, 1);
-        return DateTimeRange(start: start, end: DateTime(start.year, start.month + 12, 0));
+        return DateTimeRange(start: DateTime(_year, 1, 1), end: DateTime(_year, 12, 31));
     }
   }
 
   bool get _isDefaultWindow => _custom == null && _offset == 0;
 
   String get _windowTitle {
+    final custom = _custom;
+    if (custom == null) {
+      return switch (_gran) {
+        _Gran.day || _Gran.week => monthTitle(_month),
+        _Gran.month => '$_year',
+      };
+    }
     final w = _window;
     String yy(DateTime d) => '${d.year % 100}'.padLeft(2, '0');
-    String mon(DateTime d) {
-      final s = DateFormat('MMM', 'pt_BR').format(d).replaceAll('.', '');
-      return '${s[0].toUpperCase()}${s.substring(1)}/${yy(d)}';
-    }
-
-    if (_custom == null) {
-      switch (_gran) {
-        case _Gran.day:
-          return monthTitle(w.start);
-        case _Gran.week:
-          return '${shortDate(w.start)} – ${shortDate(w.end)}/${yy(w.end)}';
-        case _Gran.month:
-          return '${mon(w.start)} – ${mon(w.end)}';
+    final months = _wholeMonths(w);
+    if (months == 1) return monthTitle(w.start);
+    if (months != null) {
+      String mon(DateTime d) {
+        final s = DateFormat('MMM', 'pt_BR').format(d).replaceAll('.', '');
+        return '${s[0].toUpperCase()}${s.substring(1)}/${yy(d)}';
       }
+
+      return '${mon(w.start)} – ${mon(w.end)}';
     }
     return '${shortDate(w.start)}/${yy(w.start)} – ${shortDate(w.end)}/${yy(w.end)}';
   }
 
-  String get _stepName => _custom != null
-      ? 'intervalo'
-      : switch (_gran) {
-          _Gran.day => 'mês',
-          _Gran.week => 'bloco de semanas',
-          _Gran.month => 'ano',
-        };
+  String get _stepName {
+    final custom = _custom;
+    if (custom != null) {
+      final months = _wholeMonths(custom);
+      if (months == 1) return 'mês';
+      return months != null ? '$months meses' : 'intervalo';
+    }
+    return switch (_gran) {
+      _Gran.day || _Gran.week => 'mês',
+      _Gran.month => 'ano',
+    };
+  }
 
   void _move(int delta) => _set(() => _offset += delta);
 
@@ -439,7 +467,11 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
         _Gran.day => dayTitle(b.start),
         _Gran.week => '${shortDate(b.start)} – ${shortDate(b.end)}',
         _Gran.month => () {
-            final s = DateFormat('MMM/yy', 'pt_BR').format(b.start).replaceAll('.', '');
+            // Um ano só: "Janeiro". Vários anos (período específico): "Jan/26".
+            final w = _window;
+            final s = w.start.year == w.end.year
+                ? DateFormat('MMMM', 'pt_BR').format(b.start)
+                : DateFormat('MMM/yy', 'pt_BR').format(b.start).replaceAll('.', '');
             return s[0].toUpperCase() + s.substring(1);
           }(),
       };
@@ -557,10 +589,17 @@ class _Totals extends StatelessWidget {
     final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
 
     Widget stat(String label, int value, {Color? color}) => Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: muted),
-            Amount(value, color: color, style: theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w600)),
-          ]),
+          child: Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text(label, style: muted),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: Alignment.centerLeft,
+                child: Amount(value, color: color, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+              ),
+            ]),
+          ),
         );
 
     final hasTransfers = report.transfersIn != 0 || report.transfersOut != 0;

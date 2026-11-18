@@ -9,6 +9,7 @@ import 'package:sewwallet/screens/settings_screen.dart';
 import 'package:sewwallet/screens/transactions_screen.dart';
 import 'package:sewwallet/state/settings.dart';
 import 'package:sewwallet/theme.dart';
+import 'package:sewwallet/util/format.dart';
 import 'package:sewwallet/screens/categories_screen.dart';
 import 'package:sewwallet/screens/home_shell.dart';
 import 'package:sewwallet/screens/reports_screen.dart';
@@ -200,25 +201,65 @@ void main() {
 
   testWidgets('fluxo de caixa: setas andam pelo período', (tester) async {
     final api = await pumpScreen(tester, const CashflowReportScreen());
+    final year = DateTime.now().year;
     final first = api.calls('GET', '/reports/cashflow').last.url.queryParameters;
     expect(first['granularity'], 'month');
+    expect(first['from'], '$year-01-01', reason: 'visão por mês = ano de calendário');
+    expect(first['to'], '$year-12-31');
+    expect(find.text('$year'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Próximo (ano)'));
     await tester.pumpAndSettle();
     final next = api.calls('GET', '/reports/cashflow').last.url.queryParameters;
-    final from0 = DateTime.parse(first['from']!);
-    final from1 = DateTime.parse(next['from']!);
-    expect(from1, DateTime(from0.year + 1, from0.month, 1));
+    expect(next['from'], '${year + 1}-01-01');
+    expect(find.text('${year + 1}'), findsOneWidget);
 
     await tester.tap(find.byTooltip('Anterior (ano)'));
     await tester.pumpAndSettle();
     expect(api.calls('GET', '/reports/cashflow').last.url.queryParameters['from'], first['from']);
   });
 
+  testWidgets('fluxo de caixa: por semana mostra o mês, não as datas', (tester) async {
+    final api = await pumpScreen(tester, const CashflowReportScreen());
+    await tester.tap(find.byTooltip('Mostrar filtros'));
+    await tester.pumpAndSettle();
+    await tapText(tester, 'Semana');
+
+    // Volta ao topo (a lista rolou até o botão "Semana") e recolhe os filtros.
+    await tester.drag(find.byType(Scrollable).first, const Offset(0, 800));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Recolher filtros'));
+    await tester.pumpAndSettle();
+
+    final now = DateTime.now();
+    expect(find.text(monthTitle(DateTime(now.year, now.month))), findsOneWidget);
+    var q = api.calls('GET', '/reports/cashflow').last.url.queryParameters;
+    var from = DateTime.parse(q['from']!);
+    var to = DateTime.parse(q['to']!);
+    expect(from.weekday, DateTime.monday);
+    expect(to.weekday, DateTime.sunday);
+    expect(from.isAfter(DateTime(now.year, now.month, 1)), isFalse);
+    expect(to.isBefore(DateTime(now.year, now.month + 1, 0)), isFalse);
+
+    // Atravessa fevereiro (28/29 dias) sem desalinhar: sempre começa no mês certo.
+    for (var i = 1; i <= 4; i++) {
+      await tester.tap(find.byTooltip('Próximo (mês)'));
+      await tester.pumpAndSettle();
+      final m = DateTime(now.year, now.month + i);
+      expect(find.text(monthTitle(m)), findsOneWidget);
+      q = api.calls('GET', '/reports/cashflow').last.url.queryParameters;
+      from = DateTime.parse(q['from']!);
+      to = DateTime.parse(q['to']!);
+      expect(from.isAfter(m), isFalse);
+      expect(m.difference(from).inDays, lessThan(7));
+      expect(to.isBefore(DateTime(m.year, m.month + 1, 0)), isFalse);
+    }
+  });
+
   testWidgets('relatórios: totais, tabela e troca para "Só o período"', (tester) async {
     final api = await pumpScreen(tester, const CashflowReportScreen());
     expect(find.text('Saldo final'), findsWidgets);
-    expect(find.text('Out/26'), findsWidgets);
+    expect(find.text('Outubro'), findsWidgets, reason: 'linhas com o nome do mês');
     expect(find.text('Só o período'), findsNothing, reason: 'filtros começam recolhidos');
 
     await tester.tap(find.byTooltip('Mostrar filtros'));
