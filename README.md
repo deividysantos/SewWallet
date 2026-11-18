@@ -20,8 +20,44 @@ SewWallet/
 ├── app/                      # App Flutter
 ├── docker/                   # Dockerfiles
 ├── docker-compose.yml        # Desenvolvimento (dados de exemplo)
-└── docker-compose.prod.yml   # PC de casa (dados reais, backup)
+└── docker-compose.prod.yml   # PC de casa (dados reais, backup) — ainda não criado
 ```
+
+## Rodando em desenvolvimento
+
+Só precisa do Docker.
+
+```bash
+docker compose up -d --build      # sobe Postgres + API (com dados de exemplo)
+docker compose logs -f api        # acompanha a API
+docker compose exec api npm test  # testes das regras (faturas, saldos, fluxo de caixa)
+docker compose exec api npm run db:reset   # apaga tudo e recria os dados de exemplo
+```
+
+- **App (web): http://localhost:8080.** Recompila sozinho quando você salva algo em `app/`
+  (leva ~2 min); depois é só recarregar a página. Acompanhe com `docker compose logs -f web`.
+- API: http://localhost:3000 (Postgres exposto em `localhost:5433` para ferramentas de banco)
+- Login de exemplo: veja o topo de [api/prisma/seed.ts](api/prisma/seed.ts).
+  Os dados são fictícios e as datas são relativas a hoje.
+- Mudou o `schema.prisma`? `docker compose exec api npx prisma migrate dev --name <nome>`.
+
+## API
+
+Valores em **centavos** (inteiros) e datas em `AAAA-MM-DD`. Tudo exige
+`Authorization: Bearer <token>`, exceto `/health` e `/auth/*`.
+
+| Rota | O que faz |
+|---|---|
+| `POST /auth/register`, `POST /auth/login`, `GET /auth/me` | Cadastro (se `ALLOW_REGISTRATION=true`), login e usuário logado |
+| `GET/POST/PUT/DELETE /accounts` | Contas, com `balance` (saldo atual) e `projectedMonthEnd` |
+| `GET/POST/PUT/DELETE /categories` | Categorias (padrões criadas no cadastro) |
+| `GET/POST/PUT/DELETE /cards`, `GET /cards/:id/invoices` | Cartões com fatura atual e limite usado; faturas do cartão |
+| `GET /invoices/:id`, `POST /invoices/:id/payments` | Fatura com compras e pagamentos; pagar total ou parcial |
+| `GET /transactions` | Lançamentos agrupados por dia com saldo `realized`/`projected` no fim de cada dia. Filtros: `from`, `to`, `accountIds`, `cardIds`, `categoryIds`, `type`, `status`, `search`, `includeCards` |
+| `POST /transactions` | Lançamento simples, parcelado (`installments`) ou fixo (`recurrence`) |
+| `PUT /transactions/:id?scope=one\|future\|all`, `DELETE ...?scope=` | Editar/excluir este, este e os próximos, ou todos (fixos e parcelados) |
+| `PATCH /transactions/:id/status` | Marcar como pago/pendente |
+| `GET /reports/cashflow` | Fluxo de caixa: `granularity=day\|week\|month`, `mode=period\|cumulative`, `basis=projected\|realized`, `from`, `to`, `accountIds` |
 
 ## Ambientes
 
