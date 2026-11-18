@@ -1,0 +1,198 @@
+// Valores monetários em CENTAVOS (Int). Datas de lançamento são DATE (sem hora/fuso).
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum AccountType {
+  CHECKING
+  SAVINGS
+  WALLET
+  INVESTMENT
+  OTHER
+}
+
+enum CategoryKind {
+  INCOME
+  EXPENSE
+}
+
+enum TransactionType {
+  INCOME
+  EXPENSE
+  TRANSFER
+}
+
+enum TransactionStatus {
+  PENDING
+  PAID
+}
+
+enum Frequency {
+  WEEKLY
+  MONTHLY
+  YEARLY
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  username     String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  accounts     Account[]
+  categories   Category[]
+  cards        CreditCard[]
+  transactions Transaction[]
+  recurrences  Recurrence[]
+}
+
+model Account {
+  id             String      @id @default(cuid())
+  userId         String
+  user           User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name           String
+  type           AccountType @default(CHECKING)
+  initialBalance Int         @default(0)
+  color          String?
+  archived       Boolean     @default(false)
+  createdAt      DateTime    @default(now())
+
+  transactions Transaction[] @relation("TxAccount")
+  transfersIn  Transaction[] @relation("TxToAccount")
+  cards        CreditCard[]
+
+  @@index([userId])
+}
+
+model Category {
+  id        String       @id @default(cuid())
+  userId    String
+  user      User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  kind      CategoryKind
+  color     String?
+  icon      String?
+  createdAt DateTime     @default(now())
+
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model CreditCard {
+  id               String   @id @default(cuid())
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name             String
+  limit            Int?
+  closingDay       Int
+  dueDay           Int
+  /// true: compra feita NO dia do fechamento vai para a próxima fatura.
+  closingDayInNext Boolean  @default(true)
+  paymentAccountId String
+  paymentAccount   Account  @relation(fields: [paymentAccountId], references: [id], onDelete: Restrict)
+  color            String?
+  archived         Boolean  @default(false)
+  createdAt        DateTime @default(now())
+
+  invoices     Invoice[]
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model Invoice {
+  id          String     @id @default(cuid())
+  cardId      String
+  card        CreditCard @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  /// Primeiro dia do mês em que a fatura fecha.
+  refMonth    DateTime   @db.Date
+  closingDate DateTime   @db.Date
+  dueDate     DateTime   @db.Date
+  createdAt   DateTime   @default(now())
+
+  items    Transaction[] @relation("InvoiceItems")
+  payments Transaction[] @relation("InvoicePayments")
+
+  @@unique([cardId, refMonth])
+}
+
+/// Modelo de lançamento fixo. As ocorrências são materializadas em Transaction
+/// até `generatedUntil` (horizonte de 12 meses, estendido automaticamente).
+model Recurrence {
+  id             String          @id @default(cuid())
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  frequency      Frequency
+  interval       Int             @default(1)
+  startDate      DateTime        @db.Date
+  endDate        DateTime?       @db.Date
+  generatedUntil DateTime        @db.Date
+  type           TransactionType
+  description    String
+  amount         Int
+  categoryId     String?
+  accountId      String?
+  toAccountId    String?
+  cardId         String?
+  notes          String?
+  createdAt      DateTime        @default(now())
+
+  transactions Transaction[]
+
+  @@index([userId])
+}
+
+model Transaction {
+  id          String            @id @default(cuid())
+  userId      String
+  user        User              @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type        TransactionType
+  status      TransactionStatus @default(PENDING)
+  description String
+  /// Sempre positivo; o sinal vem do tipo.
+  amount      Int
+  date        DateTime          @db.Date
+  paidAt      DateTime?         @db.Date
+  notes       String?
+
+  categoryId String?
+  category   Category? @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+
+  accountId   String?
+  account     Account? @relation("TxAccount", fields: [accountId], references: [id], onDelete: Cascade)
+  toAccountId String?
+  toAccount   Account? @relation("TxToAccount", fields: [toAccountId], references: [id], onDelete: Cascade)
+
+  cardId    String?
+  card      CreditCard? @relation(fields: [cardId], references: [id], onDelete: Cascade)
+  invoiceId String?
+  invoice   Invoice?    @relation("InvoiceItems", fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  /// Preenchido quando o lançamento é o pagamento de uma fatura.
+  paysInvoiceId String?
+  paysInvoice   Invoice? @relation("InvoicePayments", fields: [paysInvoiceId], references: [id], onDelete: SetNull)
+
+  installmentGroupId String?
+  installmentNumber  Int?
+  installmentTotal   Int?
+
+  recurrenceId String?
+  recurrence   Recurrence? @relation(fields: [recurrenceId], references: [id], onDelete: SetNull)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId, date])
+  @@index([invoiceId])
+  @@index([paysInvoiceId])
+  @@index([recurrenceId])
+  @@index([installmentGroupId])
+}

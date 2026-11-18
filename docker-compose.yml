@@ -1,0 +1,49 @@
+# Ambiente de DESENVOLVIMENTO: banco com dados de exemplo, descartável.
+# Subir:   docker compose up -d --build
+# Logs:    docker compose logs -f api
+# Resetar: docker compose exec api npm run db:reset
+name: sewwallet
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: sewwallet
+      POSTGRES_PASSWORD: sewwallet
+      POSTGRES_DB: sewwallet
+      TZ: America/Sao_Paulo
+    ports:
+      - "5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sewwallet -d sewwallet"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build:
+      context: .
+      dockerfile: docker/api.Dockerfile
+      target: dev
+    environment:
+      DATABASE_URL: postgresql://sewwallet:sewwallet@db:5432/sewwallet
+      JWT_SECRET: dev-only-secret-change-me
+      ALLOW_REGISTRATION: "true"
+      SEED_ON_START: "true"
+      APP_TZ: America/Sao_Paulo
+      TZ: America/Sao_Paulo
+      PORT: "3000"
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./api:/app
+      - api-node-modules:/app/node_modules
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  db-data:
+  api-node-modules:
