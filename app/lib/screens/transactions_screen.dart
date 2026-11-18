@@ -310,7 +310,6 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 switch (item) {
                   TxItem t => _TxTile(
                       tx: t,
-                      byPaymentDate: _cardDateView == CardDateView.payment,
                       busy: _busyId == t.id,
                       onTogglePaid: () => _togglePaid(t),
                       onTap: () => TransactionForm.open(context, existing: t),
@@ -560,13 +559,9 @@ class _TxTile extends StatelessWidget {
     required this.busy,
     required this.onTogglePaid,
     this.onTap,
-    this.byPaymentDate = false,
   });
 
   final TxItem tx;
-
-  /// A lista está agrupada pelo vencimento da fatura: a etiqueta mostra a data da compra.
-  final bool byPaymentDate;
   final bool busy;
   final VoidCallback onTogglePaid;
   final VoidCallback? onTap;
@@ -588,11 +583,7 @@ class _TxTile extends StatelessWidget {
     final tags = <Widget>[
       if (tx.card != null)
         _Tag(
-          byPaymentDate
-              ? '${tx.card!.name} · compra ${shortDate(tx.date)}'
-              : tx.invoiceDueDate == null
-                  ? tx.card!.name
-                  : '${tx.card!.name} · fatura ${shortDate(tx.invoiceDueDate!)}',
+          tx.invoiceDueDate == null ? tx.card!.name : '${tx.card!.name} · fatura ${shortDate(tx.invoiceDueDate!)}',
           icon: Icons.credit_card,
         )
       else if (tx.type == TxType.transfer)
@@ -801,13 +792,12 @@ class _FilterSheetState extends State<_FilterSheet> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  Text('Cartões na lista', style: theme.textTheme.bodySmall),
+                  Text('Compras no cartão pela', style: theme.textTheme.bodySmall),
                   const SizedBox(height: 6),
                   SegmentedButton<CardDateView>(
                     segments: const [
-                      ButtonSegment(value: CardDateView.invoice, label: Text('Na fatura')),
-                      ButtonSegment(value: CardDateView.purchase, label: Text('Por compra')),
-                      ButtonSegment(value: CardDateView.payment, label: Text('No vencimento')),
+                      ButtonSegment(value: CardDateView.invoice, label: Text('Data do pagamento')),
+                      ButtonSegment(value: CardDateView.purchase, label: Text('Data da compra')),
                     ],
                     selected: {_cardDate},
                     showSelectedIcon: false,
@@ -816,9 +806,9 @@ class _FilterSheetState extends State<_FilterSheet> {
                   const SizedBox(height: 4),
                   Text(
                     switch (_cardDate) {
-                      CardDateView.invoice => 'Um lançamento por fatura, no dia do pagamento. Toque nele para ver as compras.',
+                      CardDateView.invoice =>
+                        'Agrupadas na fatura: um lançamento por cartão no vencimento. Toque nele para ver as compras.',
                       CardDateView.purchase => 'Cada compra no dia em que foi feita.',
-                      CardDateView.payment => 'Cada compra no vencimento da fatura em que entrou.',
                     },
                     style: theme.textTheme.bodySmall,
                   ),

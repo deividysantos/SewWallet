@@ -3,14 +3,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 /// Como as compras no cartão aparecem na lista de lançamentos.
 enum CardDateView {
-  /// Agrupadas: um lançamento de fatura por cartão, no vencimento (as compras ficam no detalhe da fatura).
+  /// Pela data do pagamento: um lançamento de fatura por cartão, no vencimento
+  /// (as compras ficam no detalhe da fatura).
   invoice,
 
   /// Cada compra na data da compra.
   purchase,
-
-  /// Cada compra no vencimento da fatura (quando o dinheiro sai: fluxo de caixa).
-  payment,
 }
 
 /// Preferências do app, salvas no aparelho.
@@ -22,8 +20,8 @@ class AppSettings extends ChangeNotifier {
   Future<void> restore() async {
     try {
       final prefs = await SharedPreferences.getInstance();
-      final v = prefs.getString(_kCardDateView);
-      cardDateView = CardDateView.values.where((e) => e.name == v).firstOrNull ?? CardDateView.invoice;
+      // "payment" (versões antigas: compras soltas no vencimento) virou a visão agrupada.
+      cardDateView = prefs.getString(_kCardDateView) == 'purchase' ? CardDateView.purchase : CardDateView.invoice;
     } catch (_) {
       // Sem armazenamento: fica no padrão.
     }

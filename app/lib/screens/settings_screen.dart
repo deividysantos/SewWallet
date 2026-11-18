@@ -41,18 +41,16 @@ class SettingsScreen extends StatelessWidget {
               children: [
                 RadioListTile<CardDateView>(
                   value: CardDateView.invoice,
-                  title: Text('Agrupadas na fatura'),
-                  subtitle: Text('Um lançamento por cartão no dia do pagamento; toque para ver as compras'),
+                  title: Text('Data do pagamento, agrupadas na fatura'),
+                  subtitle: Text(
+                    'Um lançamento por cartão no vencimento da fatura, no mês em que você paga. '
+                    'Toque nele para ver as compras (fluxo de caixa)',
+                  ),
                 ),
                 RadioListTile<CardDateView>(
                   value: CardDateView.purchase,
                   title: Text('Data da compra'),
                   subtitle: Text('Mostra cada compra no dia em que foi feita'),
-                ),
-                RadioListTile<CardDateView>(
-                  value: CardDateView.payment,
-                  title: Text('Data do pagamento'),
-                  subtitle: Text('Mostra as compras no vencimento da fatura (fluxo de caixa)'),
                 ),
               ],
             ),

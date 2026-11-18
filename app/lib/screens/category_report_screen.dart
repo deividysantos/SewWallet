@@ -154,7 +154,7 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
   bool _income = false;
   bool _realized = false;
   /// Agrupado na fatura ou "data do pagamento" = gasto no mês em que a fatura vence.
-  late bool _byPayment = context.read<AppSettings>().cardDateView != CardDateView.purchase;
+  late bool _byPayment = context.read<AppSettings>().cardDateView == CardDateView.invoice;
   bool _yearView = false;
   int _offset = 0;
   DateTimeRange? _custom;
@@ -351,7 +351,7 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
   Widget build(BuildContext context) {
     final report = _report;
     final period = _period;
-    final customized = _realized || _byPayment != (context.read<AppSettings>().cardDateView != CardDateView.purchase);
+    final customized = _realized || _byPayment != (context.read<AppSettings>().cardDateView == CardDateView.invoice);
 
     return Scaffold(
       appBar: AppBar(

@@ -385,10 +385,12 @@ void main() {
     await tester.pumpAndSettle();
     await tapText(tester, 'Configurações');
     expect(find.byType(SettingsScreen), findsOneWidget);
-    await tapText(tester, 'Data do pagamento');
+    expect(find.text('Data do pagamento, agrupadas na fatura'), findsOneWidget);
+    expect(find.text('Data do pagamento'), findsNothing, reason: 'não há mais opção separada');
+    await tapText(tester, 'Data da compra');
 
-    expect(settings.cardDateView, CardDateView.payment);
-    expect(api.calls('GET', '/transactions').last.url.queryParameters['cardDate'], 'payment');
+    expect(settings.cardDateView, CardDateView.purchase);
+    expect(api.calls('GET', '/transactions').last.url.queryParameters['cardDate'], 'purchase');
   });
 
   testWidgets('tela inicial: tocar na fatura abre o detalhe com as compras', (tester) async {
