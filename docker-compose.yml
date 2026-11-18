@@ -62,9 +62,31 @@ services:
     depends_on:
       - api
 
+  # Gera o APK em releases/. Não sobe com o "up"; rode sob demanda:
+  #   docker compose --env-file .env.prod --profile tools run --rm apk
+  apk:
+    profiles: ["tools"]
+    build:
+      context: .
+      dockerfile: docker/app.Dockerfile
+    environment:
+      API_URL: ${PUBLIC_API_URL:-http://localhost:3000}
+    volumes:
+      - ./app:/app
+      - ./docker/build-apk.sh:/docker/build-apk.sh:ro
+      - ./releases:/out
+      - apk-dart-tool:/app/.dart_tool
+      - apk-build:/app/build
+      - pub-cache:/pub-cache
+      - gradle-cache:/root/.gradle
+    command: ["sh", "/docker/build-apk.sh"]
+
 volumes:
   db-data:
   api-node-modules:
   app-dart-tool:
   app-build:
   pub-cache:
+  apk-dart-tool:
+  apk-build:
+  gradle-cache:

@@ -15,7 +15,8 @@ CMD ["npm", "run", "dev"]
 FROM base AS prod
 ENV NODE_ENV=production
 COPY api/package.json api/package-lock.json ./
-RUN npm ci
+# --include=dev: NODE_ENV=production faria o npm pular TypeScript/@types, necessários no build.
+RUN npm ci --include=dev
 COPY api/ ./
 RUN npx prisma generate && npm run build && npm prune --omit=dev
 EXPOSE 3000

@@ -4,5 +4,6 @@
 app/build
 app/.dart_tool
 backups
+releases
 .env
 .env.*

@@ -20,7 +20,8 @@ SewWallet/
 ├── app/                      # App Flutter
 ├── docker/                   # Dockerfiles
 ├── docker-compose.yml        # Desenvolvimento (dados de exemplo)
-└── docker-compose.prod.yml   # PC de casa (dados reais, backup) — ainda não criado
+├── docker-compose.prod.yml   # PC de casa (dados reais, backup)
+└── .env.prod.example         # Modelo do .env.prod (segredos da produção, fora do Git)
 ```
 
 ## Rodando em desenvolvimento
@@ -40,6 +41,45 @@ docker compose exec api npm run db:reset   # apaga tudo e recria os dados de exe
 - Login de exemplo: veja o topo de [api/prisma/seed.ts](api/prisma/seed.ts).
   Os dados são fictícios e as datas são relativas a hoje.
 - Mudou o `schema.prisma`? `docker compose exec api npx prisma migrate dev --name <nome>`.
+
+## Rodando em produção (PC de casa)
+
+Roda ao lado do dev, com projeto, volumes e portas próprios.
+
+```bash
+cp .env.prod.example .env.prod    # troque senha, JWT_SECRET e PUBLIC_API_URL (IP do Tailscale)
+docker compose -f docker-compose.prod.yml --env-file .env.prod up -d --build
+docker compose -f docker-compose.prod.yml --env-file .env.prod logs -f api
+```
+
+| | Dev | Produção |
+|---|---|---|
+| App web | http://localhost:8080 | http://localhost:8081 (celular: `http://<ip-tailscale>:8081`) |
+| API | http://localhost:3000 | http://localhost:3001 (celular: `http://<ip-tailscale>:3001`) |
+| Postgres | `localhost:5433` | `127.0.0.1:5434` (só no próprio PC) |
+| Dados | fictícios (seed) | reais, sem seed |
+
+- **Primeiro uso**: com `ALLOW_REGISTRATION=true`, crie seu usuário pelo app; depois mude para
+  `false` no `.env.prod` e rode o `up -d` de novo.
+- **Backup**: o serviço `backup` faz `pg_dump` ao subir e todo dia às `BACKUP_HOUR` em `backups/`,
+  mantendo `BACKUP_KEEP_DAYS` dias. Restaurar:
+  `gunzip -c backups/<arquivo>.sql.gz | docker compose -f docker-compose.prod.yml --env-file .env.prod exec -T db psql -U sewwallet -d sewwallet`
+- Mudou o código? Rode o `up -d --build` de novo (a produção não recompila sozinha).
+- Os containers têm `restart: unless-stopped`: voltam sozinhos se o Docker Desktop iniciar com o Windows.
+
+## Gerando o APK (Android)
+
+O SDK do Android já vem no container do Flutter; não precisa instalar nada no Windows.
+
+```bash
+docker compose --env-file .env.prod --profile tools run --rm apk
+```
+
+- Sai em `releases/sewwallet-<versão>.apk` (fora do Git). A API padrão é o `PUBLIC_API_URL`
+  do `.env.prod`; dá para trocar o servidor na tela de login.
+- O celular precisa estar com o Tailscale ligado para falar com a API.
+- Assinado com a chave de debug por enquanto: instale permitindo "fontes desconhecidas".
+- Para lançar uma versão nova, aumente `version:` em `app/pubspec.yaml` (ex.: `1.0.0+2`).
 
 ## API
 

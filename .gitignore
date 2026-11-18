@@ -2,6 +2,7 @@
 .env
 .env.*
 !.env.example
+!.env.prod.example
 
 # Node
 node_modules/
@@ -18,6 +19,7 @@ build/
 
 # Android
 *.apk
+releases/
 *.aab
 local.properties
 *.jks
