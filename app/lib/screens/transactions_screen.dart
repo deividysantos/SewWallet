@@ -682,10 +682,14 @@ class _InvoiceTile extends StatelessWidget {
     final (statusText, statusColor) = switch (invoice.status) {
       InvoiceStatus.open => ('Aberta · fecha ${shortDate(invoice.closingDate)}', scheme.onSurfaceVariant),
       InvoiceStatus.closed => ('Fechada', scheme.onSurfaceVariant),
-      InvoiceStatus.paid => ('Paga', colors.income),
+      InvoiceStatus.paid => (
+          invoice.lastPaidAt == null ? 'Paga' : 'Paga em ${shortDate(invoice.lastPaidAt!)}',
+          colors.income,
+        ),
       InvoiceStatus.overdue => ('Atrasada', colors.warning),
     };
     final shown = invoice.remaining > 0 ? invoice.remaining : invoice.total;
+    final cardColor = hexColor(context.read<Catalog>().card(invoice.card?.id)?.color) ?? scheme.tertiary;
 
     return InkWell(
       onTap: onTap,
@@ -693,7 +697,7 @@ class _InvoiceTile extends StatelessWidget {
       padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
       child: Row(
         children: [
-          IconBadge(icon: Icons.credit_card, color: scheme.tertiary),
+          IconBadge(icon: Icons.credit_card, color: cardColor),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -792,31 +796,41 @@ class _FilterSheetState extends State<_FilterSheet> {
                 secondary: CircleAvatar(radius: 6, backgroundColor: hexColor(a.color) ?? theme.colorScheme.primary),
               ),
             const Divider(),
-            SwitchListTile(
-              value: _includeCards,
-              onChanged: (v) => setState(() => _includeCards = v),
-              title: const Text('Mostrar compras no cartão'),
-              subtitle: const Text('Elas não mexem no saldo; a fatura sim'),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('Cartões na lista', style: theme.textTheme.bodySmall),
+                  const SizedBox(height: 6),
+                  SegmentedButton<CardDateView>(
+                    segments: const [
+                      ButtonSegment(value: CardDateView.invoice, label: Text('Na fatura')),
+                      ButtonSegment(value: CardDateView.purchase, label: Text('Por compra')),
+                      ButtonSegment(value: CardDateView.payment, label: Text('No vencimento')),
+                    ],
+                    selected: {_cardDate},
+                    showSelectedIcon: false,
+                    onSelectionChanged: (s) => setState(() => _cardDate = s.first),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    switch (_cardDate) {
+                      CardDateView.invoice => 'Um lançamento por fatura, no dia do pagamento. Toque nele para ver as compras.',
+                      CardDateView.purchase => 'Cada compra no dia em que foi feita.',
+                      CardDateView.payment => 'Cada compra no vencimento da fatura em que entrou.',
+                    },
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ],
+              ),
             ),
-            if (_includeCards)
-              Padding(
-                padding: const EdgeInsets.fromLTRB(24, 4, 24, 0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text('Compras no cartão pela', style: theme.textTheme.bodySmall),
-                    const SizedBox(height: 6),
-                    SegmentedButton<CardDateView>(
-                      segments: const [
-                        ButtonSegment(value: CardDateView.purchase, label: Text('Data da compra')),
-                        ButtonSegment(value: CardDateView.payment, label: Text('Data do pagamento')),
-                      ],
-                      selected: {_cardDate},
-                      showSelectedIcon: false,
-                      onSelectionChanged: (s) => setState(() => _cardDate = s.first),
-                    ),
-                  ],
-                ),
+            if (_cardDate != CardDateView.invoice)
+              SwitchListTile(
+                value: _includeCards,
+                onChanged: (v) => setState(() => _includeCards = v),
+                title: const Text('Mostrar compras no cartão'),
+                subtitle: const Text('Elas não mexem no saldo; a fatura sim'),
               ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),

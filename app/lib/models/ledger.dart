@@ -144,12 +144,16 @@ class InvoiceItem extends LedgerItem {
     required this.paidAmount,
     required this.remaining,
     required this.status,
+    this.lastPaidAt,
   });
 
   @override
   final String id;
   @override
   final String description;
+
+  /// Data do último pagamento (quando já houve).
+  final DateTime? lastPaidAt;
 
   /// Vencimento.
   @override
@@ -173,6 +177,7 @@ class InvoiceItem extends LedgerItem {
         paidAmount: j['paid'] as int,
         remaining: j['remaining'] as int,
         status: parseInvoiceStatus(j['status']),
+        lastPaidAt: j['lastPaidAt'] == null ? null : parseDate(j['lastPaidAt'] as String),
       );
 }
 

@@ -31,8 +31,13 @@ const listQuery = z.object({
     .enum(['true', 'false'])
     .default('true')
     .transform((v) => v === 'true'),
-  /** purchase: compras no cartão na data da compra. payment: no vencimento da fatura (fluxo de caixa). */
-  cardDate: z.enum(['purchase', 'payment']).default('purchase'),
+  /**
+   * Compras no cartão na lista:
+   * - invoice: agrupadas em um lançamento de fatura por cartão, no vencimento (as compras ficam no detalhe da fatura);
+   * - purchase: cada compra na data da compra;
+   * - payment: cada compra no vencimento da fatura.
+   */
+  cardDate: z.enum(['invoice', 'purchase', 'payment']).default('purchase'),
 });
 
 const normalize = (s: string) =>
@@ -45,6 +50,13 @@ export function makeDto(ledger: Ledger) {
   const accountById = new Map(ledger.accounts.map((a) => [a.id, a]));
   const cardById = new Map(ledger.cards.map((c) => [c.id, c]));
   const invoiceById = new Map(ledger.invoices.map((i) => [i.id, i]));
+  /** Data do último pagamento (pago) de cada fatura. */
+  const lastPaidAt = new Map<string, DateStr>();
+  for (const t of ledger.txs) {
+    if (!t.paysInvoiceId || t.status !== 'PAID') continue;
+    const prev = lastPaidAt.get(t.paysInvoiceId);
+    if (!prev || t.date > prev) lastPaidAt.set(t.paysInvoiceId, t.date);
+  }
   const ref = (m: Map<string, { id: string; name: string }>, id: string | null) => {
     const row = id ? m.get(id) : undefined;
     return row ? { id: row.id, name: row.name } : null;
@@ -93,6 +105,7 @@ export function makeDto(ledger: Ledger) {
       remaining: i.remaining,
       status: i.status,
       overdue: i.status === 'OVERDUE',
+      lastPaidAt: lastPaidAt.get(i.id) ?? null,
     }),
   };
 }
@@ -128,6 +141,8 @@ transactionsRouter.get('/', async (req, res) => {
   };
   const summary = { income: 0, expense: 0, cardExpense: 0 };
   const byPayment = q.cardDate === 'payment';
+  // Agrupado: o cartão aparece só como fatura. Busca/categoria procuram compras, então voltam a listar as compras.
+  const grouped = q.cardDate === 'invoice' && !catFilter && !search;
   const invoiceById = new Map(ledger.invoices.map((i) => [i.id, i]));
   /** Dia em que o lançamento aparece na lista. */
   const listDate = (tx: TxView): DateStr => {
@@ -135,21 +150,31 @@ transactionsRouter.get('/', async (req, res) => {
     return tx.date;
   };
 
-  // A fatura aparece só enquanto tem valor a pagar; depois de paga, quem aparece é o lançamento de pagamento.
-  // Na visão por pagamento ela vem antes, seguida das compras que a compõem.
-  const showInvoices = !catFilter && !search && (!q.type || q.type === 'EXPENSE') && q.status !== 'PAID';
+  // Separado (compra/pagamento): a fatura aparece só enquanto tem valor a pagar; depois de paga,
+  // quem aparece é o lançamento de pagamento. Na visão por pagamento ela vem antes das compras.
+  // Agrupado: a fatura aparece sempre no vencimento (aberta, fechada ou paga) e substitui os
+  // lançamentos de pagamento na lista (os saldos continuam contando o pagamento na data real).
+  const showInvoices =
+    !catFilter && !search && (!q.type || q.type === 'EXPENSE') && (grouped || q.status !== 'PAID');
   const pushInvoices = () => {
     if (!showInvoices) return;
     for (const inv of ledger.invoices) {
-      if (inv.dueDate < from || inv.dueDate > to || inv.remaining <= 0) continue;
+      if (inv.dueDate < from || inv.dueDate > to) continue;
+      if (grouped) {
+        if (inv.total <= 0 && inv.paid <= 0) continue; // fatura vazia
+        if (q.status === 'PAID' && inv.remaining > 0) continue;
+        if (q.status === 'PENDING' && inv.remaining <= 0) continue;
+      } else if (inv.remaining <= 0) continue;
       if (cardFilter && !cardFilter.has(inv.cardId)) continue;
       if (!touchesAccounts([inv.paymentAccountId])) continue;
       push(inv.dueDate, dto.invoice(inv));
+      if (grouped) summary.cardExpense += inv.total;
     }
   };
-  if (byPayment) pushInvoices();
+  if (byPayment || grouped) pushInvoices();
 
   for (const tx of ledger.txs) {
+    if (grouped && (tx.cardId || (tx.paysInvoiceId && invoiceById.has(tx.paysInvoiceId)))) continue;
     const date = listDate(tx);
     if (date < from || date > to) continue;
     if (tx.cardId && (!q.includeCards || (cardFilter && !cardFilter.has(tx.cardId)))) continue;
@@ -168,7 +193,7 @@ transactionsRouter.get('/', async (req, res) => {
     } else if (tx.type === 'INCOME') summary.income += tx.amount;
     else if (tx.type === 'EXPENSE') summary.expense += tx.amount;
   }
-  if (!byPayment) pushInvoices();
+  if (!byPayment && !grouped) pushInvoices();
 
   if (t >= from && t <= to && !byDay.has(t)) byDay.set(t, []);
   const days = [...byDay.keys()].sort();

@@ -30,7 +30,7 @@ class SettingsScreen extends StatelessWidget {
           section('Lançamentos'),
           ListTile(
             title: const Text('Compras no cartão'),
-            subtitle: const Text('Em que dia as compras aparecem na lista de lançamentos'),
+            subtitle: const Text('Como as compras aparecem na lista de lançamentos'),
           ),
           RadioGroup<CardDateView>(
             groupValue: settings.cardDateView,
@@ -39,6 +39,11 @@ class SettingsScreen extends StatelessWidget {
             },
             child: const Column(
               children: [
+                RadioListTile<CardDateView>(
+                  value: CardDateView.invoice,
+                  title: Text('Agrupadas na fatura'),
+                  subtitle: Text('Um lançamento por cartão no dia do pagamento; toque para ver as compras'),
+                ),
                 RadioListTile<CardDateView>(
                   value: CardDateView.purchase,
                   title: Text('Data da compra'),

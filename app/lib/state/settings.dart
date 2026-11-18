@@ -1,12 +1,15 @@
 import 'package:flutter/foundation.dart' show ChangeNotifier;
 import 'package:shared_preferences/shared_preferences.dart';
 
-/// Em que dia as compras no cartão aparecem na lista de lançamentos.
+/// Como as compras no cartão aparecem na lista de lançamentos.
 enum CardDateView {
-  /// Na data da compra.
+  /// Agrupadas: um lançamento de fatura por cartão, no vencimento (as compras ficam no detalhe da fatura).
+  invoice,
+
+  /// Cada compra na data da compra.
   purchase,
 
-  /// No vencimento da fatura (quando o dinheiro sai: fluxo de caixa).
+  /// Cada compra no vencimento da fatura (quando o dinheiro sai: fluxo de caixa).
   payment,
 }
 
@@ -14,13 +17,13 @@ enum CardDateView {
 class AppSettings extends ChangeNotifier {
   static const _kCardDateView = 'settings.cardDateView';
 
-  CardDateView cardDateView = CardDateView.purchase;
+  CardDateView cardDateView = CardDateView.invoice;
 
   Future<void> restore() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       final v = prefs.getString(_kCardDateView);
-      cardDateView = CardDateView.values.where((e) => e.name == v).firstOrNull ?? CardDateView.purchase;
+      cardDateView = CardDateView.values.where((e) => e.name == v).firstOrNull ?? CardDateView.invoice;
     } catch (_) {
       // Sem armazenamento: fica no padrão.
     }

@@ -207,7 +207,7 @@ void main() {
     expect(q['kind'], 'EXPENSE');
     expect(q['from'], apiDate(DateTime(now.year, now.month, 1)));
     expect(q['to'], apiDate(DateTime(now.year, now.month + 1, 0)));
-    expect(q['cardDate'], 'purchase', reason: 'segue a configuração do app');
+    expect(q['cardDate'], 'payment', reason: 'agrupado na fatura = gasto no mês do vencimento');
 
     expect(find.textContaining('▲ 25%'), findsOneWidget, reason: 'R\$ 1.000 vs R\$ 800');
     expect(find.textContaining('40% está sem categoria'), findsOneWidget);
@@ -378,7 +378,8 @@ void main() {
   testWidgets('configurações: compras no cartão pela data do pagamento', (tester) async {
     final settings = AppSettings();
     final api = await pumpScreen(tester, const TransactionsScreen(), settings: settings);
-    expect(api.calls('GET', '/transactions').last.url.queryParameters['cardDate'], 'purchase');
+    expect(api.calls('GET', '/transactions').last.url.queryParameters['cardDate'], 'invoice',
+        reason: 'padrão: compras agrupadas na fatura');
 
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
@@ -388,6 +389,13 @@ void main() {
 
     expect(settings.cardDateView, CardDateView.payment);
     expect(api.calls('GET', '/transactions').last.url.queryParameters['cardDate'], 'payment');
+  });
+
+  testWidgets('tela inicial: tocar na fatura abre o detalhe com as compras', (tester) async {
+    await pumpScreen(tester, const TransactionsScreen());
+    await tapText(tester, 'Fatura Roxinho');
+    expect(find.text('Fatura de Dezembro 2026'), findsOneWidget);
+    expect(find.textContaining('Notebook'), findsOneWidget);
   });
 
   testWidgets('novo lançamento: cria categoria sem sair do formulário', (tester) async {
