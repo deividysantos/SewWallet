@@ -4,6 +4,8 @@ import 'package:provider/provider.dart';
 import '../state/settings.dart';
 import '../widgets/stitch.dart';
 import 'categories_screen.dart';
+import 'notification_settings_screen.dart';
+import 'saved_filters_screen.dart';
 
 /// Configurações do app. Novas parametrizações entram aqui, cada grupo na sua seção.
 class SettingsScreen extends StatelessWidget {
@@ -18,9 +20,9 @@ class SettingsScreen extends StatelessWidget {
     final theme = Theme.of(context);
 
     Widget section(String title) => Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-          child: Text(title, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.primary)),
-        );
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+      child: Text(title, style: theme.textTheme.titleSmall?.copyWith(color: theme.colorScheme.primary)),
+    );
 
     return Scaffold(
       appBar: AppBar(title: const Text('Configurações')),
@@ -55,6 +57,15 @@ class SettingsScreen extends StatelessWidget {
               ],
             ),
           ),
+          SwitchListTile(
+            value: settings.includeForecasts,
+            onChanged: settings.setIncludeForecasts,
+            title: const Text('Considerar previsões por padrão'),
+            subtitle: const Text(
+              'Valor inicial do "Considerar previsões" na lista de lançamentos e nos relatórios. '
+              'Previsões abertas entram pelo valor que ainda falta abater',
+            ),
+          ),
           const Padding(padding: EdgeInsets.symmetric(vertical: 12), child: Stitch(indent: 16, endIndent: 16)),
           section('Cadastros'),
           ListTile(
@@ -63,11 +74,28 @@ class SettingsScreen extends StatelessWidget {
             trailing: const Icon(Icons.chevron_right),
             onTap: () => CategoriesScreen.open(context),
           ),
+          ListTile(
+            leading: const Icon(Icons.bookmarks_outlined),
+            title: const Text('Filtros salvos'),
+            subtitle: const Text('Filtro preferido de cada relatório e do Início'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => SavedFiltersScreen.open(context),
+          ),
+          ListTile(
+            leading: const Icon(Icons.notifications_active_outlined),
+            title: const Text('Notificações dos bancos'),
+            subtitle: const Text('Ler notificações e sugerir ou dar baixa em lançamentos'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => NotificationSettingsScreen.open(context),
+          ),
           const SizedBox(height: 40),
           const Center(child: SewMark(size: 22)),
           const SizedBox(height: 6),
           Center(
-            child: Text('feito sob medida', style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+            child: Text(
+              'feito sob medida',
+              style: theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant),
+            ),
           ),
         ],
       ),

@@ -12,9 +12,9 @@ class CardForm extends StatefulWidget {
 
   final CardInfo? existing;
 
-  static Future<bool?> open(BuildContext context, {CardInfo? existing}) => Navigator.of(context).push<bool>(
-        MaterialPageRoute(fullscreenDialog: true, builder: (_) => CardForm(existing: existing)),
-      );
+  static Future<bool?> open(BuildContext context, {CardInfo? existing}) => Navigator.of(
+    context,
+  ).push<bool>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => CardForm(existing: existing)));
 
   @override
   State<CardForm> createState() => _CardFormState();
@@ -32,6 +32,7 @@ class _CardFormState extends State<CardForm> {
   late String? _paymentAccountId = widget.existing?.paymentAccountId;
   late String? _color = widget.existing?.color ?? swatches.first;
   late bool _archived = widget.existing?.archived ?? false;
+  late final _lastDigits = TextEditingController(text: widget.existing?.lastDigits ?? '');
   bool _saving = false;
 
   bool get _isEdit => widget.existing != null;
@@ -46,6 +47,7 @@ class _CardFormState extends State<CardForm> {
   void dispose() {
     _name.dispose();
     _limit.dispose();
+    _lastDigits.dispose();
     super.dispose();
   }
 
@@ -62,6 +64,7 @@ class _CardFormState extends State<CardForm> {
       'closingDayInNext': _closingDayInNext,
       'paymentAccountId': _paymentAccountId,
       'color': _color,
+      'lastDigits': _lastDigits.text.trim().isEmpty ? null : _lastDigits.text.trim(),
       if (_isEdit) 'archived': _archived,
     };
     setState(() => _saving = true);
@@ -86,7 +89,8 @@ class _CardFormState extends State<CardForm> {
     final ok = await confirm(
       context,
       title: 'Excluir cartão',
-      message: 'O cartão "${widget.existing!.name}", as faturas e TODAS as compras nele serão excluídos. '
+      message:
+          'O cartão "${widget.existing!.name}", as faturas e TODAS as compras nele serão excluídos. '
           'Os pagamentos de fatura já lançados nas contas continuam. Para só esconder, use "Arquivado".',
       confirmLabel: 'Excluir',
       destructive: true,
@@ -135,6 +139,22 @@ class _CardFormState extends State<CardForm> {
             const SizedBox(height: 16),
             MoneyField(controller: _limit, label: 'Limite (opcional)'),
             const SizedBox(height: 16),
+            TextFormField(
+              key: const ValueKey('lastDigits'),
+              controller: _lastDigits,
+              keyboardType: TextInputType.number,
+              maxLength: 4,
+              decoration: const InputDecoration(
+                labelText: 'Final do cartão (opcional)',
+                helperText: '4 últimos dígitos: reconhece o cartão nas notificações do banco',
+                counterText: '',
+              ),
+              validator: (v) {
+                final t = (v ?? '').trim();
+                return t.isEmpty || RegExp(r'^\d{4}$').hasMatch(t) ? null : 'Use os 4 últimos dígitos';
+              },
+            ),
+            const SizedBox(height: 16),
             Row(
               children: [
                 Expanded(
@@ -161,9 +181,11 @@ class _CardFormState extends State<CardForm> {
               value: _closingDayInNext,
               onChanged: (v) => setState(() => _closingDayInNext = v),
               title: const Text('Compra no dia do fechamento vai para a próxima fatura'),
-              subtitle: Text(_closingDayInNext
-                  ? 'Compras feitas no dia $_closingDay já vão para a fatura seguinte'
-                  : 'Compras feitas no dia $_closingDay ainda entram na fatura que está fechando'),
+              subtitle: Text(
+                _closingDayInNext
+                    ? 'Compras feitas no dia $_closingDay já vão para a fatura seguinte'
+                    : 'Compras feitas no dia $_closingDay ainda entram na fatura que está fechando',
+              ),
             ),
             if (_isEdit)
               Padding(

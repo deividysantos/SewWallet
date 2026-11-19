@@ -6,6 +6,14 @@ import 'package:sewwallet/screens/accounts_screen.dart';
 import 'package:sewwallet/screens/cards_screen.dart';
 import 'package:sewwallet/screens/cashflow_report_screen.dart';
 import 'package:sewwallet/screens/category_report_screen.dart';
+import 'package:sewwallet/screens/counterpart_report_screen.dart';
+import 'package:sewwallet/screens/saved_filters_screen.dart';
+import 'package:sewwallet/screens/card_form.dart';
+import 'package:sewwallet/screens/card_detail_screen.dart';
+import 'package:sewwallet/screens/notification_settings_screen.dart';
+import 'package:sewwallet/screens/suggestions_screen.dart';
+import 'package:sewwallet/state/catalog.dart';
+import 'package:provider/provider.dart';
 import 'package:sewwallet/screens/settings_screen.dart';
 import 'package:sewwallet/screens/transactions_screen.dart';
 import 'package:sewwallet/state/settings.dart';
@@ -30,12 +38,16 @@ void main() {
 
   group('Novo lançamento', () {
     testWidgets('compra parcelada no cartão', (tester) async {
-      final api = await pumpScreen(tester, launcher((ctx) => TransactionForm.open(ctx)));
+      final api = await pumpScreen(
+        tester,
+        launcher((ctx) => TransactionForm.open(ctx, type: TxType.expense, card: true)),
+      );
       await tapText(tester, 'abrir');
+      expect(find.text('Compra no cartão'), findsOneWidget);
+      expect(find.text('Receita'), findsNothing, reason: 'o tipo vem do botão +');
 
       await tester.enterText(field('Valor'), '120000');
       await tester.enterText(field('Descrição'), 'Celular');
-      await tapText(tester, 'Cartão');
       expect(find.textContaining('Entra na fatura que vence em'), findsOneWidget);
 
       await tapText(tester, 'Parcelado');
@@ -51,7 +63,25 @@ void main() {
       expect(body.containsKey('accountId'), isFalse);
       expect(body.containsKey('status'), isFalse);
       expect(body['installments'], {'total': 3, 'amountIs': 'total'});
-      expect(find.text('Novo lançamento'), findsNothing, reason: 'o formulário fecha depois de salvar');
+      expect(find.text('Compra no cartão'), findsNothing, reason: 'o formulário fecha depois de salvar');
+    });
+
+    testWidgets('compra no cartão com contrapartida', (tester) async {
+      final api = await pumpScreen(
+        tester,
+        launcher((ctx) => TransactionForm.open(ctx, type: TxType.expense, card: true)),
+      );
+      await tapText(tester, 'abrir');
+
+      await tester.enterText(field('Valor'), '10000');
+      await tester.enterText(field('Descrição'), 'Fone para Ana');
+      await tapText(tester, 'Gerar contrapartida');
+      expect(find.textContaining('no vencimento da fatura'), findsOneWidget);
+      await tapText(tester, 'Salvar');
+
+      final body = api.lastBody('POST', '/transactions');
+      expect(body['cardId'], 'c1');
+      expect(body['counterpart'], isTrue);
     });
 
     testWidgets('despesa pendente na conta', (tester) async {
@@ -71,10 +101,10 @@ void main() {
     });
 
     testWidgets('transferência entre contas', (tester) async {
-      final api = await pumpScreen(tester, launcher((ctx) => TransactionForm.open(ctx)));
+      final api = await pumpScreen(tester, launcher((ctx) => TransactionForm.open(ctx, type: TxType.transfer)));
       await tapText(tester, 'abrir');
+      expect(find.text('Nova transferência'), findsOneWidget);
 
-      await tapText(tester, 'Transf.');
       await tester.enterText(field('Valor'), '100000');
       await tester.enterText(field('Descrição'), 'Reserva');
       await tapText(tester, 'Salvar');
@@ -105,6 +135,80 @@ void main() {
       await tapText(tester, 'Salvar');
       expect(find.text('Informe o valor'), findsOneWidget);
       expect(api.calls('POST', '/transactions'), isEmpty);
+    });
+  });
+
+  group('Previsões', () {
+    testWidgets('nova previsão não tem "Pago" nem parcelado', (tester) async {
+      final api = await pumpScreen(tester, launcher((ctx) => TransactionForm.open(ctx)));
+      await tapText(tester, 'abrir');
+
+      await tapText(tester, 'É uma previsão');
+      expect(find.text('Previsão a pagar'), findsOneWidget);
+      expect(find.text('Pago'), findsNothing);
+      expect(find.textContaining('Abater de uma previsão'), findsNothing);
+
+      await tester.enterText(field('Valor previsto'), '20000');
+      await tester.enterText(field('Descrição'), 'Gasolina');
+      await tapText(tester, 'Salvar');
+
+      final body = api.lastBody('POST', '/transactions');
+      expect(body['isForecast'], isTrue);
+      expect(body['amount'], 20000);
+      expect(body.containsKey('status'), isFalse);
+      expect(body.containsKey('forecastId'), isFalse);
+    });
+
+    testWidgets('lançamento real abate uma previsão e pode encerrá-la', (tester) async {
+      final api = await pumpScreen(tester, launcher((ctx) => TransactionForm.open(ctx)));
+      await tapText(tester, 'abrir');
+
+      await tester.enterText(field('Valor'), '9500');
+      await tapText(tester, 'Abater de uma previsão (opcional)');
+      expect(api.calls('GET', '/transactions/forecasts/open').single.url.queryParameters['type'], 'EXPENSE');
+      await tapText(tester, 'Gasolina');
+      expect(find.text('Abate de: Gasolina'), findsOneWidget);
+      await tapText(tester, 'Encerrar a previsão após salvar');
+      await tapText(tester, 'Salvar');
+
+      final body = api.lastBody('POST', '/transactions');
+      expect(body['forecastId'], 'f1');
+      expect(body['description'], 'Gasolina', reason: 'descrição vazia herda a da previsão');
+      expect(body['categoryId'], 'k1');
+      expect(api.lastBody('PATCH', '/transactions/f1/forecast-state'), {'state': 'CLOSED'});
+    });
+
+    testWidgets('lista: "Considerar previsões" vai na consulta', (tester) async {
+      final api = await pumpScreen(tester, const TransactionsScreen());
+      expect(api.calls('GET', '/transactions').last.url.queryParameters['forecasts'], 'true');
+
+      await tester.tap(find.byTooltip('Filtros'));
+      await tester.pumpAndSettle();
+      await tapText(tester, 'Considerar previsões');
+      await tapText(tester, 'Aplicar');
+      expect(api.calls('GET', '/transactions').last.url.queryParameters['forecasts'], 'false');
+    });
+
+    testWidgets('configuração muda o padrão dos relatórios', (tester) async {
+      final settings = AppSettings()..includeForecasts = false;
+      final api = await pumpScreen(tester, const CashflowReportScreen(), settings: settings);
+      expect(api.calls('GET', '/reports/cashflow').last.url.queryParameters['forecasts'], 'false');
+    });
+
+    testWidgets('relatório de previsões: fixas, avulsas e abatimentos', (tester) async {
+      final api = await pumpScreen(tester, const ReportsScreen());
+      await tapText(tester, 'Previsões');
+      final q = api.calls('GET', '/reports/forecasts').last.url.queryParameters;
+      final now = DateTime.now();
+      expect(q['month'], apiDate(DateTime(now.year, now.month)));
+      expect(find.text('Fixas'), findsOneWidget);
+      expect(find.text('Avulsas deste mês'), findsOneWidget);
+      expect(find.text('Mercado'), findsOneWidget);
+
+      await tapText(tester, 'Gasolina');
+      expect(find.text('Posto Shell'), findsOneWidget);
+      await tapText(tester, 'Encerrar previsão');
+      expect(api.lastBody('PATCH', '/transactions/f1/forecast-state'), {'state': 'CLOSED'});
     });
   });
 
@@ -322,7 +426,12 @@ void main() {
       await tester.pumpAndSettle();
       await tapText(tester, 'Salvar');
 
-      expect(api.lastBody('POST', '/categories'), {'name': 'Pets', 'color': '#820AD1', 'icon': 'pets', 'kind': 'EXPENSE'});
+      expect(api.lastBody('POST', '/categories'), {
+        'name': 'Pets',
+        'color': '#820AD1',
+        'icon': 'pets',
+        'kind': 'EXPENSE',
+      });
     });
 
     testWidgets('editar não muda o tipo; excluir pede confirmação', (tester) async {
@@ -361,13 +470,14 @@ void main() {
 
   testWidgets('navega por todas as abas', (tester) async {
     final api = await pumpScreen(tester, const HomeShell());
-    expect(find.text('Conta de luz'), findsOneWidget);
-    expect(find.text('Fatura Roxinho'), findsOneWidget);
-
-    for (final tab in ['Contas', 'Cartões', 'Relatórios', 'Lançamentos']) {
+    // Abre no Início (painel do mês).
+    expect(find.text('Resultado do mês'), findsOneWidget);
+    for (final tab in ['Contas', 'Cartões', 'Relatórios', 'Início', 'Lançamentos']) {
       await tester.tap(find.descendant(of: find.byType(NavigationBar), matching: find.text(tab)));
       await tester.pumpAndSettle();
     }
+    expect(find.text('Conta de luz'), findsOneWidget);
+    expect(find.text('Fatura Roxinho'), findsOneWidget);
 
     // Marcar como pago chama a API e recarrega.
     await tester.tap(find.byTooltip('Pendente — marcar como pago'));
@@ -378,8 +488,11 @@ void main() {
   testWidgets('configurações: compras no cartão pela data do pagamento', (tester) async {
     final settings = AppSettings();
     final api = await pumpScreen(tester, const TransactionsScreen(), settings: settings);
-    expect(api.calls('GET', '/transactions').last.url.queryParameters['cardDate'], 'invoice',
-        reason: 'padrão: compras agrupadas na fatura');
+    expect(
+      api.calls('GET', '/transactions').last.url.queryParameters['cardDate'],
+      'invoice',
+      reason: 'padrão: compras agrupadas na fatura',
+    );
 
     await tester.tap(find.byTooltip('Menu'));
     await tester.pumpAndSettle();
@@ -407,15 +520,222 @@ void main() {
     await tester.enterText(field('Descrição'), 'Ração');
 
     await tapText(tester, 'Sem categoria');
+    expect(find.text('Categoria da despesa'), findsOneWidget, reason: 'abre a folha de categorias');
     await tapText(tester, 'Nova categoria…');
     expect(find.text('Nova categoria'), findsOneWidget);
     await tester.enterText(field('Nome'), 'Pets');
     await tapText(tester, 'Salvar');
 
     expect(api.lastBody('POST', '/categories')['kind'], 'EXPENSE');
-    expect(find.text('Novo lançamento'), findsOneWidget, reason: 'volta para o formulário');
+    expect(find.text('Nova despesa'), findsOneWidget, reason: 'volta para o formulário');
     expect(find.widgetWithText(TextFormField, 'Descrição'), findsOneWidget);
     await tapText(tester, 'Salvar');
     expect(api.lastBody('POST', '/transactions')['categoryId'], 'k3');
+  });
+
+  group('Novidades 0.7', () {
+    testWidgets('botão +: some e mostra os atalhos; Cartão abre compra no cartão', (tester) async {
+      final api = await pumpScreen(tester, const TransactionsScreen());
+      await tester.tap(find.byTooltip('Novo lançamento'));
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Novo lançamento'), findsNothing, reason: 'o + some');
+      for (final t in ['Despesa', 'Receita', 'Transferência', 'Cartão']) {
+        expect(find.byTooltip(t), findsOneWidget);
+      }
+      await tester.tap(find.byTooltip('Cartão'));
+      await tester.pumpAndSettle();
+      expect(find.text('Compra no cartão'), findsOneWidget);
+      await tester.enterText(field('Valor'), '2500');
+      await tester.enterText(field('Descrição'), 'Livro');
+      await tapText(tester, 'Salvar');
+      final body = api.lastBody('POST', '/transactions');
+      expect(body['type'], 'EXPENSE');
+      expect(body['cardId'], 'c1');
+    });
+
+    testWidgets('botão +: Receita abre o formulário de receita', (tester) async {
+      await pumpScreen(tester, const TransactionsScreen());
+      await tester.tap(find.byTooltip('Novo lançamento'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Receita'));
+      await tester.pumpAndSettle();
+      expect(find.text('Nova receita'), findsOneWidget);
+    });
+
+    testWidgets('categoria: escolhe na folha em grade', (tester) async {
+      final api = await pumpScreen(tester, launcher((ctx) => TransactionForm.open(ctx, type: TxType.expense)));
+      await tapText(tester, 'abrir');
+      await tester.enterText(field('Valor'), '3000');
+      await tester.enterText(field('Descrição'), 'Mercado');
+      await tapText(tester, 'Sem categoria');
+      await tapText(tester, 'Compras');
+      expect(find.text('Categoria da despesa'), findsNothing, reason: 'a folha fecha');
+      await tapText(tester, 'Salvar');
+      expect(api.lastBody('POST', '/transactions')['categoryId'], 'k1');
+    });
+
+    testWidgets('início: painel do mês, filtros e filtro preferido', (tester) async {
+      final api = await pumpScreen(tester, const HomeShell());
+      expect(find.text('Saldo das contas'), findsOneWidget);
+      expect(find.text('Resultado do mês'), findsOneWidget);
+      expect(find.text('Fatura Roxinho'), findsWidgets);
+
+      await tester.tap(find.byKey(const ValueKey('dashCounterparts')));
+      await tester.pumpAndSettle();
+      expect(api.calls('GET', '/reports/dashboard').last.url.queryParameters['counterparts'], 'false');
+
+      await tester.tap(find.byKey(const ValueKey('preferredFilter')).first);
+      await tester.pumpAndSettle();
+      await tapText(tester, 'Salvar como filtro preferido');
+      final saved = api.lastBody('PUT', '/report-filters/dashboard')['params'] as Map;
+      expect(saved['counterparts'], isFalse);
+      expect(saved.containsKey('month'), isFalse, reason: 'o mês não é salvo');
+
+      await tester.scrollUntilVisible(find.text('Maiores gastos'), 200, scrollable: find.byType(Scrollable).first);
+      expect(find.text('Compras'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('A RECEBER DE VOLTA'), 200, scrollable: find.byType(Scrollable).first);
+      expect(find.text('FALTA PAGAR'), findsOneWidget, reason: 'previsões do mês');
+    });
+
+    testWidgets('filtro preferido abre sozinho no relatório', (tester) async {
+      final fake = FakeApi()
+        ..preferred = [
+          {
+            'report': 'cashflow',
+            'params': {
+              'gran': 'day',
+              'cumulative': false,
+              'projected': true,
+              'forecasts': false,
+              'accountIds': ['a2'],
+            },
+          },
+        ];
+      final api = await pumpScreen(tester, const CashflowReportScreen(), api: fake);
+      final q = api.calls('GET', '/reports/cashflow').first.url.queryParameters;
+      expect(q['granularity'], 'day');
+      expect(q['mode'], 'period');
+      expect(q['forecasts'], 'false');
+      expect(q['accountIds'], 'a2');
+      expect(find.byIcon(Icons.star), findsOneWidget);
+    });
+
+    testWidgets('filtros salvos: lista e remove', (tester) async {
+      final fake = FakeApi()
+        ..preferred = [
+          {
+            'report': 'cashflow',
+            'params': {
+              'gran': 'week',
+              'accountIds': ['a1'],
+            },
+          },
+        ];
+      final api = await pumpScreen(tester, const SavedFiltersScreen(), api: fake);
+      expect(find.textContaining('Por semana'), findsOneWidget);
+      expect(find.textContaining('Nubank'), findsOneWidget);
+      await tester.tap(find.byTooltip('Remover'));
+      await tester.pumpAndSettle();
+      await tapText(tester, 'Remover');
+      expect(api.calls('DELETE', '/report-filters/cashflow'), hasLength(1));
+      expect(find.byTooltip('Remover'), findsNothing);
+    });
+
+    testWidgets('contrapartidas: totais, pendentes e marcar como recebida', (tester) async {
+      final api = await pumpScreen(tester, const CounterpartReportScreen());
+      expect(find.text('A receber de volta'), findsOneWidget);
+      expect(find.text('Pendentes'), findsOneWidget);
+      expect(find.text('Quitadas'), findsOneWidget);
+      expect(find.text('Fone para Ana'), findsOneWidget);
+      await tapText(tester, 'Fone para Ana');
+      await tapText(tester, 'Marcar como recebida');
+      expect(api.lastBody('PATCH', '/transactions/cp1/status'), {'status': 'PAID'});
+    });
+
+    testWidgets('relatórios: lista o de contrapartidas', (tester) async {
+      await pumpScreen(tester, const ReportsScreen());
+      expect(find.text('Contrapartidas'), findsOneWidget);
+    });
+  });
+
+  group('Notificações dos bancos', () {
+    testWidgets('início: aviso de sugestões abre a lista', (tester) async {
+      final fake = FakeApi()..suggestionCount = 2;
+      await pumpScreen(tester, const HomeShell(), api: fake);
+      expect(find.text('2 sugestões de lançamento'), findsOneWidget);
+      await tapText(tester, '2 sugestões de lançamento');
+      expect(find.text('Sugestões'), findsOneWidget);
+      expect(find.text('Posto Shell'), findsOneWidget);
+    });
+
+    testWidgets('sugestão: criar lançamento vem preenchido e marca como aceita', (tester) async {
+      final api = await pumpScreen(tester, const SuggestionsScreen());
+      expect(find.textContaining('POSTO SHELL'), findsOneWidget, reason: 'mostra o texto da notificação');
+      await tapText(tester, 'Criar lançamento');
+      expect(find.text('Compra no cartão'), findsOneWidget);
+      await tapText(tester, 'Salvar');
+      final body = api.lastBody('POST', '/transactions');
+      expect(body['amount'], 8740);
+      expect(body['description'], 'Posto Shell');
+      expect(body['cardId'], 'c1');
+      expect(body['categoryId'], 'k1');
+      expect(body['date'], '2026-11-19');
+      expect(api.lastBody('POST', '/suggestions/s1/accept'), {'transactionId': 'tNew'});
+    });
+
+    testWidgets('sugestão: descartar', (tester) async {
+      final api = await pumpScreen(tester, const SuggestionsScreen());
+      await tapText(tester, 'Descartar');
+      expect(api.calls('POST', '/suggestions/s1/dismiss'), hasLength(1));
+    });
+
+    testWidgets('processadas: desfazer baixa automática', (tester) async {
+      final api = await pumpScreen(tester, const SuggestionsScreen());
+      await tapText(tester, 'Processadas');
+      expect(find.textContaining('Baixa automática'), findsOneWidget);
+      await tapText(tester, 'Desfazer baixa');
+      expect(api.calls('POST', '/suggestions/s2/undo'), hasLength(1));
+    });
+
+    testWidgets('configuração: sem acesso liberado avisa e ligar grava os bancos lidos', (tester) async {
+      SharedPreferences.setMockInitialValues({});
+      await pumpScreen(tester, const NotificationSettingsScreen());
+      expect(find.text('Acesso às notificações bloqueado'), findsOneWidget);
+      expect(find.text('Banco do Brasil'), findsOneWidget, reason: 'bancos conhecidos vêm marcados');
+      await tester.tap(find.byKey(const ValueKey('notifEnabled')));
+      await tester.pumpAndSettle();
+      final prefs = await SharedPreferences.getInstance();
+      expect(prefs.getBool('notifications.enabled'), isTrue);
+      expect(prefs.getString('notifications.apps'), contains('com.nu.production'));
+    });
+
+    testWidgets('cartão: final de 4 dígitos vai para a API', (tester) async {
+      final api = await pumpScreen(
+        tester,
+        launcher((ctx) => CardForm.open(ctx, existing: ctx.read<Catalog>().cards.first)),
+      );
+      await tapText(tester, 'abrir');
+      await tester.enterText(find.byKey(const ValueKey('lastDigits')), '4821');
+      await tapText(tester, 'Salvar');
+      expect(api.lastBody('PUT', '/cards/c1')['lastDigits'], '4821');
+    });
+  });
+
+  group('Fatura', () {
+    testWidgets('compras abrem para editar e previsões do cartão aparecem', (tester) async {
+      await pumpScreen(tester, launcher((ctx) => CardDetailScreen.open(ctx, cardId: 'c1', invoiceId: 'i1')));
+      await tapText(tester, 'abrir');
+      expect(find.text('Previsões (1)'), findsOneWidget);
+      expect(find.text('Gasolina no cartão'), findsOneWidget);
+      await tapText(tester, 'Notebook  3/10');
+      expect(find.text('Editar lançamento'), findsOneWidget, reason: 'abre o formulário da compra');
+    });
+
+    testWidgets('previsão da fatura abre a edição da previsão', (tester) async {
+      await pumpScreen(tester, launcher((ctx) => CardDetailScreen.open(ctx, cardId: 'c1', invoiceId: 'i1')));
+      await tapText(tester, 'abrir');
+      await tapText(tester, 'Gasolina no cartão');
+      expect(find.text('Editar previsão a pagar'), findsOneWidget);
+    });
   });
 }

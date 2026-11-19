@@ -127,29 +127,38 @@ class SewMark extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         Text.rich(
-          TextSpan(children: [
-            TextSpan(
-              text: 'sew',
-              style: SewFonts.display(TextStyle(
-                fontSize: size,
-                fontStyle: FontStyle.italic,
-                fontWeight: FontWeight.w600,
-                color: colors.accent,
-                letterSpacing: -0.5,
-              )),
-            ),
-            TextSpan(
-              text: 'wallet',
-              style: SewFonts.body(TextStyle(
-                fontSize: size * 0.82,
-                fontWeight: FontWeight.w700,
-                color: scheme.onSurface,
-                letterSpacing: -0.8,
-              )),
-            ),
-          ]),
+          TextSpan(
+            children: [
+              TextSpan(
+                text: 'sew',
+                style: SewFonts.display(
+                  TextStyle(
+                    fontSize: size,
+                    fontStyle: FontStyle.italic,
+                    fontWeight: FontWeight.w600,
+                    color: colors.accent,
+                    letterSpacing: -0.5,
+                  ),
+                ),
+              ),
+              TextSpan(
+                text: 'wallet',
+                style: SewFonts.body(
+                  TextStyle(
+                    fontSize: size * 0.82,
+                    fontWeight: FontWeight.w700,
+                    color: scheme.onSurface,
+                    letterSpacing: -0.8,
+                  ),
+                ),
+              ),
+            ],
+          ),
         ),
-        SizedBox(width: size * 4.2, child: Stitch(color: colors.accent.withValues(alpha: 0.7))),
+        SizedBox(
+          width: size * 4.2,
+          child: Stitch(color: colors.accent.withValues(alpha: 0.7)),
+        ),
       ],
     );
   }

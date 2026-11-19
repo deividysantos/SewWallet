@@ -23,6 +23,9 @@ class Catalog extends ChangeNotifier {
   bool loaded = false;
   String? error;
 
+  /// Filtro preferido de cada relatório (chave: cashflow, categories, forecasts, counterparts, dashboard).
+  Map<String, Map<String, dynamic>> preferredFilters = {};
+
   /// Muda a cada recarga; quem depende de saldos recarrega junto.
   int revision = 0;
 
@@ -38,6 +41,7 @@ class Catalog extends ChangeNotifier {
     accounts = [];
     cards = [];
     categories = [];
+    preferredFilters = {};
     loaded = false;
     error = null;
     notifyListeners();
@@ -56,7 +60,34 @@ class Catalog extends ChangeNotifier {
     } catch (e) {
       error = e.toString();
     }
+    await _loadFilters();
     revision++;
+    notifyListeners();
+  }
+
+  /// Os filtros preferidos não impedem o app de abrir se falharem.
+  Future<void> _loadFilters() async {
+    try {
+      final list = await _session.api.get('/report-filters') as List;
+      preferredFilters = {
+        for (final j in list.cast<Map<String, dynamic>>())
+          j['report'] as String: Map<String, dynamic>.from(j['params'] as Map),
+      };
+    } catch (_) {}
+  }
+
+  Map<String, dynamic>? preferred(String report) => preferredFilters[report];
+
+  /// Salva [params] como o filtro preferido de [report] (sem recarregar as telas).
+  Future<void> savePreferred(String report, Map<String, dynamic> params) async {
+    await _session.api.put('/report-filters/$report', {'params': params});
+    preferredFilters = {...preferredFilters, report: params};
+    notifyListeners();
+  }
+
+  Future<void> clearPreferred(String report) async {
+    await _session.api.delete('/report-filters/$report');
+    preferredFilters = {...preferredFilters}..remove(report);
     notifyListeners();
   }
 

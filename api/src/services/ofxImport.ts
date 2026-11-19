@@ -26,7 +26,7 @@ async function load(userId: string, cardId: string, refMonth: DateStr, ofx: stri
   const invoice = await prisma.invoice.findUnique({ where: { cardId_refMonth: { cardId, refMonth: toDate(ref) } } });
   const rows = invoice
     ? await prisma.transaction.findMany({
-        where: { invoiceId: invoice.id },
+        where: { invoiceId: invoice.id, isForecast: false },
         orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
         include: { category: { select: { id: true, name: true, color: true, icon: true } } },
       })
@@ -45,6 +45,7 @@ async function suggestCategories(userId: string, entries: OfxEntry[]) {
     where: {
       userId,
       categoryId: { not: null },
+      isForecast: false,
       OR: [{ externalName: { in: memos } }, { externalName: { in: names } }, { description: { in: names } }],
     },
     orderBy: { date: 'desc' },

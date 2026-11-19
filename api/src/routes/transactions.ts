@@ -1,11 +1,19 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { buildCashEvents, dailyBalances } from '../domain/cashflow';
-import { addDays, endOfMonth, maxDate, startOfMonth, today, type DateStr } from '../lib/dates';
+import { forecastEffective } from '../domain/forecast';
+import { addDays, endOfMonth, startOfMonth, today, type DateStr } from '../lib/dates';
 import { dateStr, HttpError, idList, parse } from '../lib/http';
-import { initialBalanceOf, loadLedger, type InvoiceView, type Ledger, type TxView } from '../services/ledger';
+import { expireForecasts, forecastsParam, refreshLedger, setForecastState } from '../services/forecasts';
+import {
+  initialBalanceOf,
+  ledgerView,
+  loadLedger,
+  type InvoiceView,
+  type Ledger,
+  type TxView,
+} from '../services/ledger';
 import { ownedTransaction } from '../services/owned';
-import { ensureRecurrences, horizon } from '../services/recurrence';
 import {
   createTransaction,
   createTxSchema,
@@ -38,6 +46,8 @@ const listQuery = z.object({
    * - payment: cada compra no vencimento da fatura.
    */
   cardDate: z.enum(['invoice', 'purchase', 'payment']).default('purchase'),
+  /** Considerar previsões abertas (na lista, no resumo e nos saldos previstos). */
+  forecasts: forecastsParam,
 });
 
 const normalize = (s: string) =>
@@ -76,7 +86,7 @@ export function makeDto(ledger: Ledger) {
         date: t.date,
         paidAt: t.paidAt,
         notes: t.notes,
-        overdue: !t.cardId && t.status === 'PENDING' && t.date < ledger.today,
+        overdue: !t.isForecast && !t.cardId && t.status === 'PENDING' && t.date < ledger.today,
         affectsBalance: !t.cardId,
         category: t.category,
         account: ref(accountById, t.accountId),
@@ -88,6 +98,22 @@ export function makeDto(ledger: Ledger) {
           ? { groupId: t.installmentGroupId, number: t.installmentNumber, total: t.installmentTotal }
           : null,
         recurrenceId: t.recurrenceId,
+        forecast: t.isForecast
+          ? {
+              state: t.forecastState,
+              planned: t.forecastPlanned,
+              abated: t.forecastAbated,
+              remaining: t.forecastRemaining,
+              effective: forecastEffective({ ...t, amount: t.forecastPlanned }, ledger.today),
+            }
+          : null,
+        forecastId: t.forecastId,
+        /** Lançamento ligado: a contrapartida (na origem) ou a origem (na contrapartida). */
+        counterpart: t.counterpartId
+          ? { id: t.counterpartId, role: 'origin' as const }
+          : t.counterpartOfId
+            ? { id: t.counterpartOfId, role: 'counterpart' as const }
+            : null,
       };
     },
     invoice: (i: InvoiceView) => ({
@@ -103,6 +129,7 @@ export function makeDto(ledger: Ledger) {
       total: i.total,
       paid: i.paid,
       remaining: i.remaining,
+      forecastTotal: i.forecastTotal,
       status: i.status,
       overdue: i.status === 'OVERDUE',
       lastPaidAt: lastPaidAt.get(i.id) ?? null,
@@ -122,8 +149,9 @@ transactionsRouter.get('/', async (req, res) => {
   const to = q.to ?? endOfMonth(t);
   if (from > to) throw new HttpError(400, '"from" depois de "to"');
 
-  await ensureRecurrences(req.userId, maxDate(horizon(t), to));
+  await refreshLedger(req.userId, t, to);
   const ledger = await loadLedger(req.userId, t);
+  const view = ledgerView(ledger, q.forecasts);
   const accFilter = q.accountIds ? new Set(q.accountIds) : null;
   const cardFilter = q.cardIds ? new Set(q.cardIds) : null;
   const catFilter = q.categoryIds ? new Set(q.categoryIds) : null;
@@ -160,21 +188,31 @@ transactionsRouter.get('/', async (req, res) => {
     if (!showInvoices) return;
     for (const inv of ledger.invoices) {
       if (inv.dueDate < from || inv.dueDate > to) continue;
+      const forecastTotal = q.forecasts ? inv.forecastTotal : 0;
       if (grouped) {
-        if (inv.total <= 0 && inv.paid <= 0) continue; // fatura vazia
+        if (inv.total <= 0 && inv.paid <= 0 && forecastTotal <= 0) continue; // fatura vazia
         if (q.status === 'PAID' && inv.remaining > 0) continue;
         if (q.status === 'PENDING' && inv.remaining <= 0) continue;
       } else if (inv.remaining <= 0) continue;
       if (cardFilter && !cardFilter.has(inv.cardId)) continue;
       if (!touchesAccounts([inv.paymentAccountId])) continue;
       push(inv.dueDate, dto.invoice(inv));
-      if (grouped) summary.cardExpense += inv.total;
+      if (grouped) summary.cardExpense += inv.total + forecastTotal;
     }
   };
   if (byPayment || grouped) pushInvoices();
 
-  for (const tx of ledger.txs) {
-    if (grouped && (tx.cardId || (tx.paysInvoiceId && invoiceById.has(tx.paysInvoiceId)))) continue;
+  // Previsões aparecem só enquanto contam (abertas, com valor a abater); somam ao resumo pelo restante.
+  const openForecasts = q.forecasts
+    ? ledger.forecasts.filter((f) => forecastEffective({ ...f, amount: f.forecastPlanned }, t) > 0)
+    : [];
+  const listed = [...ledger.txs, ...openForecasts].sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+
+  for (const tx of listed) {
+    // Agrupado: compras do cartão ficam dentro da fatura. Previsões no cartão continuam na lista
+    // (na data delas), porque não são compras e o usuário precisa vê-las.
+    const cardForecast = !!tx.cardId && tx.isForecast;
+    if (grouped && ((tx.cardId && !cardForecast) || (tx.paysInvoiceId && invoiceById.has(tx.paysInvoiceId)))) continue;
     const date = listDate(tx);
     if (date < from || date > to) continue;
     if (tx.cardId && (!q.includeCards || (cardFilter && !cardFilter.has(tx.cardId)))) continue;
@@ -187,18 +225,21 @@ transactionsRouter.get('/', async (req, res) => {
     if (search && !normalize(tx.description).includes(search)) continue;
 
     push(date, dto.tx(tx));
+    // Agrupado: a previsão no cartão já soma no resumo pela fatura ("+ previsto").
+    if (grouped && cardForecast) continue;
+    const amount = tx.isForecast ? tx.forecastRemaining : tx.amount;
     if (tx.cardId) {
-      if (tx.type === 'EXPENSE') summary.cardExpense += tx.amount;
-      else if (tx.type === 'INCOME') summary.cardExpense -= tx.amount;
-    } else if (tx.type === 'INCOME') summary.income += tx.amount;
-    else if (tx.type === 'EXPENSE') summary.expense += tx.amount;
+      if (tx.type === 'EXPENSE') summary.cardExpense += amount;
+      else if (tx.type === 'INCOME') summary.cardExpense -= amount;
+    } else if (tx.type === 'INCOME') summary.income += amount;
+    else if (tx.type === 'EXPENSE') summary.expense += amount;
   }
   if (!byPayment && !grouped) pushInvoices();
 
   if (t >= from && t <= to && !byDay.has(t)) byDay.set(t, []);
   const days = [...byDay.keys()].sort();
   const openingDay = addDays(from, -1);
-  const events = buildCashEvents(ledger.txs, ledger.invoices, t, accFilter);
+  const events = buildCashEvents(view.txs, view.invoices, t, accFilter);
   const balances = dailyBalances(events, initialBalanceOf(ledger.accounts, accFilter), [openingDay, ...days]);
 
   res.json({
@@ -216,8 +257,28 @@ transactionsRouter.get('/:id', async (req, res) => {
   await ownedTransaction(req.userId, req.params.id);
   const t = today();
   const ledger = await loadLedger(req.userId, t);
-  const tx = ledger.txs.find((x) => x.id === req.params.id)!;
+  const tx = [...ledger.txs, ...ledger.forecasts].find((x) => x.id === req.params.id)!;
   res.json(makeDto(ledger).tx(tx));
+});
+
+/** Previsões abertas (para escolher qual um lançamento real abate). ?type=INCOME|EXPENSE */
+transactionsRouter.get('/forecasts/open', async (req, res) => {
+  const { type } = parse(z.object({ type: z.enum(['INCOME', 'EXPENSE']).optional() }), req.query);
+  const t = today();
+  await expireForecasts(req.userId, t);
+  const ledger = await loadLedger(req.userId, t);
+  const dto = makeDto(ledger);
+  res.json(
+    ledger.forecasts
+      .filter((f) => f.forecastState === 'OPEN' && (!type || f.type === type))
+      .map((f) => dto.tx(f)),
+  );
+});
+
+/** Encerra (CLOSED, o "OK") ou reabre (OPEN) uma previsão. */
+transactionsRouter.patch('/:id/forecast-state', async (req, res) => {
+  const { state } = parse(z.object({ state: z.enum(['OPEN', 'CLOSED']) }), req.body);
+  res.json(await setForecastState(req.userId, req.params.id, state, today()));
 });
 
 transactionsRouter.post('/', async (req, res) => {

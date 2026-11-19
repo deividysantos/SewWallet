@@ -207,8 +207,10 @@ ThemeData buildTheme(Brightness brightness) {
       RoundedRectangleBorder(borderRadius: BorderRadius.circular(radius), side: side);
   final hairline = BorderSide(color: scheme.outlineVariant);
 
-  OutlineInputBorder inputBorder(Color c, [double w = 1]) =>
-      OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide(color: c, width: w));
+  OutlineInputBorder inputBorder(Color c, [double w = 1]) => OutlineInputBorder(
+    borderRadius: BorderRadius.circular(12),
+    borderSide: BorderSide(color: c, width: w),
+  );
 
   return base.copyWith(
     scaffoldBackgroundColor: scheme.surface,
@@ -225,12 +227,9 @@ ThemeData buildTheme(Brightness brightness) {
       scrolledUnderElevation: 0,
       centerTitle: false,
       titleSpacing: 16,
-      titleTextStyle: SewFonts.display(TextStyle(
-        fontSize: 24,
-        fontWeight: FontWeight.w600,
-        letterSpacing: -0.4,
-        color: scheme.onSurface,
-      )),
+      titleTextStyle: SewFonts.display(
+        TextStyle(fontSize: 24, fontWeight: FontWeight.w600, letterSpacing: -0.4, color: scheme.onSurface),
+      ),
     ),
     cardTheme: CardThemeData(
       color: card,
@@ -245,11 +244,7 @@ ThemeData buildTheme(Brightness brightness) {
       subtitleTextStyle: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
     ),
     filledButtonTheme: FilledButtonThemeData(
-      style: FilledButton.styleFrom(
-        shape: r(12),
-        minimumSize: const Size(64, 46),
-        textStyle: text.labelLarge,
-      ),
+      style: FilledButton.styleFrom(shape: r(12), minimumSize: const Size(64, 46), textStyle: text.labelLarge),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
@@ -267,9 +262,7 @@ ThemeData buildTheme(Brightness brightness) {
         textStyle: text.labelLarge,
       ),
     ),
-    iconButtonTheme: IconButtonThemeData(
-      style: IconButton.styleFrom(shape: r(10)),
-    ),
+    iconButtonTheme: IconButtonThemeData(style: IconButton.styleFrom(shape: r(10))),
     segmentedButtonTheme: SegmentedButtonThemeData(
       style: ButtonStyle(
         shape: WidgetStatePropertyAll(r(10)),
@@ -300,14 +293,21 @@ ThemeData buildTheme(Brightness brightness) {
       height: 66,
       indicatorColor: accent.withValues(alpha: dark ? 0.22 : 0.16),
       indicatorShape: r(10),
-      labelTextStyle: WidgetStateProperty.resolveWith((s) => text.labelSmall?.copyWith(
-            fontWeight: s.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
-            color: s.contains(WidgetState.selected) ? scheme.onSurface : scheme.onSurfaceVariant,
-          )),
-      iconTheme: WidgetStateProperty.resolveWith((s) => IconThemeData(
-            size: 22,
-            color: s.contains(WidgetState.selected) ? (dark ? accent : SewPalette.cobre) : scheme.onSurfaceVariant,
-          )),
+      labelTextStyle: WidgetStateProperty.resolveWith(
+        (s) => text.labelSmall?.copyWith(
+          // 5 abas: "Lançamentos" precisa caber em uma linha num celular de 360 px.
+          fontSize: 11,
+          letterSpacing: 0,
+          fontWeight: s.contains(WidgetState.selected) ? FontWeight.w700 : FontWeight.w500,
+          color: s.contains(WidgetState.selected) ? scheme.onSurface : scheme.onSurfaceVariant,
+        ),
+      ),
+      iconTheme: WidgetStateProperty.resolveWith(
+        (s) => IconThemeData(
+          size: 22,
+          color: s.contains(WidgetState.selected) ? (dark ? accent : SewPalette.cobre) : scheme.onSurfaceVariant,
+        ),
+      ),
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
@@ -323,16 +323,12 @@ ThemeData buildTheme(Brightness brightness) {
           color: s.contains(WidgetState.error)
               ? scheme.error
               : s.contains(WidgetState.focused)
-                  ? accent
-                  : scheme.onSurfaceVariant,
+              ? accent
+              : scheme.onSurfaceVariant,
         ),
       ),
     ),
-    chipTheme: ChipThemeData(
-      shape: r(8, hairline),
-      backgroundColor: card,
-      labelStyle: text.labelMedium,
-    ),
+    chipTheme: ChipThemeData(shape: r(8, hairline), backgroundColor: card, labelStyle: text.labelMedium),
     dialogTheme: DialogThemeData(
       backgroundColor: card,
       surfaceTintColor: Colors.transparent,
@@ -357,10 +353,7 @@ ThemeData buildTheme(Brightness brightness) {
       contentTextStyle: text.bodyMedium?.copyWith(color: scheme.onInverseSurface),
       shape: r(12),
     ),
-    progressIndicatorTheme: ProgressIndicatorThemeData(
-      color: accent,
-      linearTrackColor: Colors.transparent,
-    ),
+    progressIndicatorTheme: ProgressIndicatorThemeData(color: accent, linearTrackColor: Colors.transparent),
     switchTheme: SwitchThemeData(
       thumbColor: WidgetStateProperty.resolveWith(
         (s) => s.contains(WidgetState.selected) ? (dark ? const Color(0xFF2B1608) : SewPalette.papel) : scheme.outline,
@@ -379,9 +372,7 @@ ThemeData buildTheme(Brightness brightness) {
       ),
     ),
     radioTheme: RadioThemeData(
-      fillColor: WidgetStateProperty.resolveWith(
-        (s) => s.contains(WidgetState.selected) ? accent : scheme.outline,
-      ),
+      fillColor: WidgetStateProperty.resolveWith((s) => s.contains(WidgetState.selected) ? accent : scheme.outline),
     ),
     badgeTheme: BadgeThemeData(backgroundColor: accent, textColor: scheme.onSecondary),
     tooltipTheme: TooltipThemeData(

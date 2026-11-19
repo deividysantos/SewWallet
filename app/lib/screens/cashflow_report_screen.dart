@@ -8,9 +8,11 @@ import 'package:provider/provider.dart';
 import '../models/ledger.dart';
 import '../state/catalog.dart';
 import '../state/session.dart';
+import '../state/settings.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
+import '../widgets/preferred_filter.dart';
 import '../widgets/stitch.dart';
 
 enum _Gran { day, week, month }
@@ -34,6 +36,9 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
   _Gran _gran = _Gran.month;
   bool _cumulative = true;
   bool _projected = true;
+
+  /// Considerar previsões abertas (pelo valor que falta abater).
+  late bool _forecasts = context.read<AppSettings>().includeForecasts;
 
   /// Quantos intervalos para trás (<0) ou para frente (>0) do padrão.
   int _offset = 0;
@@ -59,7 +64,33 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
     _catalog = context.read<Catalog>();
     _seenRevision = _catalog.revision;
     _catalog.addListener(_onCatalog);
+    final saved = _catalog.preferred(_reportKey);
+    if (saved != null) _applyFilter(saved, reload: false);
     _load();
+  }
+
+  static const _reportKey = 'cashflow';
+
+  Map<String, dynamic> _currentFilter() => {
+    'gran': _gran.name,
+    'cumulative': _cumulative,
+    'projected': _projected,
+    'forecasts': _forecasts,
+    'accountIds': _accountIds.toList(),
+  };
+
+  void _applyFilter(Map<String, dynamic> p, {bool reload = true}) {
+    void change() {
+      _gran = _Gran.values.where((g) => g.name == filterString(p, 'gran')).firstOrNull ?? _Gran.month;
+      _cumulative = filterBool(p, 'cumulative') ?? true;
+      _projected = filterBool(p, 'projected') ?? true;
+      _forecasts = filterBool(p, 'forecasts') ?? _forecasts;
+      _accountIds = filterIds(p, 'accountIds').where((id) => _catalog.account(id) != null).toSet();
+      _offset = 0;
+      _custom = null;
+    }
+
+    reload ? _set(change) : change();
   }
 
   void _onCatalog() {
@@ -173,9 +204,9 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
   void _move(int delta) => _set(() => _offset += delta);
 
   void _resetWindow() => _set(() {
-        _offset = 0;
-        _custom = null;
-      });
+    _offset = 0;
+    _custom = null;
+  });
 
   // ---------- dados ----------
 
@@ -186,14 +217,18 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
     });
     final w = _window;
     try {
-      final data = await context.read<Session>().api.get('/reports/cashflow', query: {
-        'granularity': _gran.name,
-        'mode': _cumulative ? 'cumulative' : 'period',
-        'basis': _projected ? 'projected' : 'realized',
-        'from': apiDate(w.start),
-        'to': apiDate(w.end),
-        if (_accountIds.isNotEmpty) 'accountIds': _accountIds.join(','),
-      });
+      final data = await context.read<Session>().api.get(
+        '/reports/cashflow',
+        query: {
+          'granularity': _gran.name,
+          'mode': _cumulative ? 'cumulative' : 'period',
+          'basis': _projected ? 'projected' : 'realized',
+          'from': apiDate(w.start),
+          'to': apiDate(w.end),
+          if (_accountIds.isNotEmpty) 'accountIds': _accountIds.join(','),
+          'forecasts': '$_forecasts',
+        },
+      );
       if (mounted) setState(() => _report = CashflowReport.fromJson(data as Map<String, dynamic>));
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -240,10 +275,10 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
   }
 
   String get _granLabel => switch (_gran) {
-        _Gran.day => 'Por dia',
-        _Gran.week => 'Por semana',
-        _Gran.month => 'Por mês',
-      };
+    _Gran.day => 'Por dia',
+    _Gran.week => 'Por semana',
+    _Gran.month => 'Por mês',
+  };
 
   /// Todos os filtros em um modal (rolável, para telas pequenas).
   Future<void> _openFiltersModal() async {
@@ -319,7 +354,17 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
           showSelectedIcon: false,
           onSelectionChanged: (s) => onChanged(() => _projected = s.first),
         ),
-        const SizedBox(height: 8),
+        CheckboxListTile(
+          key: const ValueKey('cashflowForecasts'),
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          value: _forecasts,
+          onChanged: _projected ? (v) => onChanged(() => _forecasts = v ?? true) : null,
+          title: const Text('Considerar previsões'),
+          subtitle: Text(
+            _projected ? 'Previsões abertas entram pelo valor que falta abater' : 'O realizado nunca inclui previsões',
+          ),
+        ),
         OutlinedButton.icon(
           onPressed: () async {
             await _pickAccounts();
@@ -341,8 +386,11 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
                   refresh?.call();
                 },
                 icon: const Icon(Icons.date_range_outlined, size: 18),
-                label: Text(_custom == null ? 'Escolher período específico' : 'Período: $_windowTitle',
-                    maxLines: 1, overflow: TextOverflow.ellipsis),
+                label: Text(
+                  _custom == null ? 'Escolher período específico' : 'Período: $_windowTitle',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
             ),
             if (!_isDefaultWindow)
@@ -378,16 +426,19 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
     final labelStyle = Theme.of(context).textTheme.labelMedium;
 
     Widget chip(String text, {IconData? icon, bool highlight = false}) => Container(
-          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-          decoration: BoxDecoration(
-            color: highlight ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (icon != null) ...[Icon(icon, size: 14, color: scheme.onSurfaceVariant), const SizedBox(width: 4)],
-            Text(text, style: labelStyle),
-          ]),
-        );
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: highlight ? scheme.secondaryContainer : scheme.surfaceContainerHigh,
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (icon != null) ...[Icon(icon, size: 14, color: scheme.onSurfaceVariant), const SizedBox(width: 4)],
+          Text(text, style: labelStyle),
+        ],
+      ),
+    );
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 0, 4, 0),
@@ -408,6 +459,10 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
                       chip(_cumulative ? 'Acumulado' : 'Só o período'),
                       const SizedBox(width: 6),
                       chip(_projected ? 'Previsto' : 'Realizado'),
+                      if (_projected) ...[
+                        const SizedBox(width: 6),
+                        chip(_forecasts ? 'Com previsões' : 'Sem previsões', icon: Icons.insights_outlined),
+                      ],
                       const SizedBox(width: 6),
                       chip(_accountsLabel, icon: Icons.account_balance_outlined, highlight: _accountIds.isNotEmpty),
                       if (_custom != null) ...[
@@ -425,11 +480,7 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
             onPressed: () => setState(() => _filtersExpanded = !_filtersExpanded),
             icon: Icon(_filtersExpanded ? Icons.expand_less : Icons.expand_more),
           ),
-          IconButton(
-            tooltip: 'Todos os filtros',
-            onPressed: _openFiltersModal,
-            icon: const Icon(Icons.tune),
-          ),
+          IconButton(tooltip: 'Todos os filtros', onPressed: _openFiltersModal, icon: const Icon(Icons.tune)),
         ],
       ),
     );
@@ -438,11 +489,7 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
   Widget _periodSwitcher() {
     return Row(
       children: [
-        IconButton(
-          tooltip: 'Anterior ($_stepName)',
-          onPressed: () => _move(-1),
-          icon: const Icon(Icons.chevron_left),
-        ),
+        IconButton(tooltip: 'Anterior ($_stepName)', onPressed: () => _move(-1), icon: const Icon(Icons.chevron_left)),
         Expanded(
           child: TextButton(
             onPressed: _resetWindow, // volta ao período atual
@@ -454,34 +501,33 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
             ),
           ),
         ),
-        IconButton(
-          tooltip: 'Próximo ($_stepName)',
-          onPressed: () => _move(1),
-          icon: const Icon(Icons.chevron_right),
-        ),
+        IconButton(tooltip: 'Próximo ($_stepName)', onPressed: () => _move(1), icon: const Icon(Icons.chevron_right)),
       ],
     );
   }
 
   String _bucketLabel(CashflowBucket b) => switch (_gran) {
-        _Gran.day => dayTitle(b.start),
-        _Gran.week => '${shortDate(b.start)} – ${shortDate(b.end)}',
-        _Gran.month => () {
-            // Um ano só: "Janeiro". Vários anos (período específico): "Jan/26".
-            final w = _window;
-            final s = w.start.year == w.end.year
-                ? DateFormat('MMMM', 'pt_BR').format(b.start)
-                : DateFormat('MMM/yy', 'pt_BR').format(b.start).replaceAll('.', '');
-            return s[0].toUpperCase() + s.substring(1);
-          }(),
-      };
+    _Gran.day => dayTitle(b.start),
+    _Gran.week => '${shortDate(b.start)} – ${shortDate(b.end)}',
+    _Gran.month => () {
+      // Um ano só: "Janeiro". Vários anos (período específico): "Jan/26".
+      final w = _window;
+      final s = w.start.year == w.end.year
+          ? DateFormat('MMMM', 'pt_BR').format(b.start)
+          : DateFormat('MMM/yy', 'pt_BR').format(b.start).replaceAll('.', '');
+      return s[0].toUpperCase() + s.substring(1);
+    }(),
+  };
 
   @override
   Widget build(BuildContext context) {
     final report = _report;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Fluxo de caixa')),
+      appBar: AppBar(
+        title: const Text('Fluxo de caixa'),
+        actions: [PreferredFilterButton(report: _reportKey, current: _currentFilter, apply: _applyFilter)],
+      ),
       body: RefreshIndicator(
         onRefresh: _load,
         child: ListView(
@@ -501,7 +547,10 @@ class _CashflowReportScreenState extends State<CashflowReportScreen> {
                   : const SizedBox(width: double.infinity),
             ),
             if (_error != null && report == null)
-              Padding(padding: const EdgeInsets.only(top: 48), child: ErrorView(message: _error!, onRetry: _load))
+              Padding(
+                padding: const EdgeInsets.only(top: 48),
+                child: ErrorView(message: _error!, onRetry: _load),
+              )
             else if (report != null) ...[
               _Totals(report: report),
               if (report.buckets.length > 1) _BalanceChart(report: report, labelOf: _bucketLabel),
@@ -589,18 +638,25 @@ class _Totals extends StatelessWidget {
     final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
 
     Widget stat(String label, int value, {Color? color}) => Expanded(
-          child: Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(label, style: muted),
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                alignment: Alignment.centerLeft,
-                child: Amount(value, color: color, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+      child: Padding(
+        padding: const EdgeInsets.only(right: 8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(label, style: muted),
+            FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Amount(
+                value,
+                color: color,
+                style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
               ),
-            ]),
-          ),
-        );
+            ),
+          ],
+        ),
+      ),
+    );
 
     final hasTransfers = report.transfersIn != 0 || report.transfersOut != 0;
     return StitchedCard(
@@ -608,25 +664,31 @@ class _Totals extends StatelessWidget {
         padding: EdgeInsets.zero,
         child: Column(
           children: [
-            Row(children: [
-              stat('Entradas', report.income, color: colors.income),
-              stat('Saídas', report.expense, color: colors.expense),
-              stat('Resultado', report.net),
-            ]),
+            Row(
+              children: [
+                stat('Entradas', report.income, color: colors.income),
+                stat('Saídas', report.expense, color: colors.expense),
+                stat('Resultado', report.net),
+              ],
+            ),
             if (hasTransfers) ...[
               const SizedBox(height: 8),
-              Row(children: [
-                stat('Transf. recebidas', report.transfersIn),
-                stat('Transf. enviadas', report.transfersOut),
-                const Spacer(),
-              ]),
+              Row(
+                children: [
+                  stat('Transf. recebidas', report.transfersIn),
+                  stat('Transf. enviadas', report.transfersOut),
+                  const Spacer(),
+                ],
+              ),
             ],
             const Divider(height: 24),
-            Row(children: [
-              stat('Saldo inicial', report.openingBalance),
-              stat('Saldo final', report.closingBalance),
-              const Spacer(),
-            ]),
+            Row(
+              children: [
+                stat('Saldo inicial', report.openingBalance),
+                stat('Saldo final', report.closingBalance),
+                const Spacer(),
+              ],
+            ),
           ],
         ),
       ),
@@ -670,12 +732,15 @@ class _BalanceChart extends StatelessWidget {
                 maxY: maxY + pad,
                 gridData: FlGridData(
                   drawVerticalLine: false,
-                  getDrawingHorizontalLine: (_) => FlLine(color: scheme.outlineVariant.withValues(alpha: 0.4), strokeWidth: 1),
+                  getDrawingHorizontalLine: (_) =>
+                      FlLine(color: scheme.outlineVariant.withValues(alpha: 0.4), strokeWidth: 1),
                 ),
                 borderData: FlBorderData(show: false),
-                extraLinesData: ExtraLinesData(horizontalLines: [
-                  if (minY < 0) HorizontalLine(y: 0, color: scheme.outline, strokeWidth: 1, dashArray: [4, 4]),
-                ]),
+                extraLinesData: ExtraLinesData(
+                  horizontalLines: [
+                    if (minY < 0) HorizontalLine(y: 0, color: scheme.outline, strokeWidth: 1, dashArray: [4, 4]),
+                  ],
+                ),
                 titlesData: FlTitlesData(
                   topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
                   rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
@@ -723,7 +788,10 @@ class _BalanceChart extends StatelessWidget {
                     color: FinanceColors.of(context).accent,
                     barWidth: 2.5,
                     dotData: FlDotData(show: buckets.length <= 16),
-                    belowBarData: BarAreaData(show: true, color: FinanceColors.of(context).accent.withValues(alpha: 0.12)),
+                    belowBarData: BarAreaData(
+                      show: true,
+                      color: FinanceColors.of(context).accent.withValues(alpha: 0.12),
+                    ),
                   ),
                 ],
               ),
@@ -752,13 +820,19 @@ class _BucketTable extends StatelessWidget {
     final cell = SewFonts.mono(theme.textTheme.bodySmall);
 
     Widget row(List<Widget> cells, {Color? bg}) => Container(
-          color: bg,
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(children: [
-            Expanded(flex: 4, child: cells[0]),
-            for (final c in cells.skip(1)) Expanded(flex: 5, child: Align(alignment: Alignment.centerRight, child: c)),
-          ]),
-        );
+      color: bg,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      child: Row(
+        children: [
+          Expanded(flex: 4, child: cells[0]),
+          for (final c in cells.skip(1))
+            Expanded(
+              flex: 5,
+              child: Align(alignment: Alignment.centerRight, child: c),
+            ),
+        ],
+      ),
+    );
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -772,15 +846,12 @@ class _BucketTable extends StatelessWidget {
         ]),
         const Divider(height: 1),
         for (final b in report.buckets)
-          row(
-            [
-              Text(labelOf(b), style: theme.textTheme.bodySmall, maxLines: 2),
-              Text(money(b.income), style: cell.copyWith(color: b.income == 0 ? scheme.outline : colors.income)),
-              Text(money(b.expense), style: cell.copyWith(color: b.expense == 0 ? scheme.outline : colors.expense)),
-              Amount(b.closing, style: cell.copyWith(fontWeight: FontWeight.w600)),
-            ],
-            bg: !today.isBefore(b.start) && !today.isAfter(b.end) ? colors.accent.withValues(alpha: 0.1) : null,
-          ),
+          row([
+            Text(labelOf(b), style: theme.textTheme.bodySmall, maxLines: 2),
+            Text(money(b.income), style: cell.copyWith(color: b.income == 0 ? scheme.outline : colors.income)),
+            Text(money(b.expense), style: cell.copyWith(color: b.expense == 0 ? scheme.outline : colors.expense)),
+            Amount(b.closing, style: cell.copyWith(fontWeight: FontWeight.w600)),
+          ], bg: !today.isBefore(b.start) && !today.isAfter(b.end) ? colors.accent.withValues(alpha: 0.1) : null),
       ],
     );
   }

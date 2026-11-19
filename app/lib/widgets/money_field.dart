@@ -20,7 +20,10 @@ class _CentsFormatter extends TextInputFormatter {
     var digits = newValue.text.replaceAll(RegExp(r'[^0-9]'), '');
     if (digits.length > 11) digits = digits.substring(0, 11);
     final text = digits.isEmpty ? '' : centsToText(int.parse(digits));
-    return TextEditingValue(text: text, selection: TextSelection.collapsed(offset: text.length));
+    return TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
   }
 }
 

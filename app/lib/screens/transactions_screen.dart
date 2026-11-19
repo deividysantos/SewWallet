@@ -8,6 +8,7 @@ import '../state/settings.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
+import '../widgets/new_transaction_fab.dart';
 import '../widgets/stitch.dart';
 import 'card_detail_screen.dart';
 import 'categories_screen.dart';
@@ -27,6 +28,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   TransactionsPage? _page;
   Set<String> _accountFilter = {};
   bool _includeCards = true;
+  late bool _includeForecasts;
+  late bool _forecastDefault;
 
   bool _loading = true;
   String? _error;
@@ -47,15 +50,23 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     _catalog.addListener(_onCatalog);
     _settings = context.read<AppSettings>();
     _cardDateView = _settings.cardDateView;
+    _forecastDefault = _includeForecasts = _settings.includeForecasts;
     _settings.addListener(_onSettings);
     _load();
   }
 
-  /// Mudou a visão das compras no cartão (data da compra × do pagamento).
+  /// Mudou a visão das compras no cartão ou o padrão de "Considerar previsões".
   void _onSettings() {
-    if (_settings.cardDateView == _cardDateView) return;
-    _cardDateView = _settings.cardDateView;
-    _load();
+    var changed = false;
+    if (_settings.cardDateView != _cardDateView) {
+      _cardDateView = _settings.cardDateView;
+      changed = true;
+    }
+    if (_settings.includeForecasts != _forecastDefault) {
+      _forecastDefault = _includeForecasts = _settings.includeForecasts;
+      changed = true;
+    }
+    if (changed) _load();
   }
 
   /// Algo mudou (lançamento, pagamento, conta...): recarrega os saldos.
@@ -82,13 +93,17 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
     try {
       final from = DateTime(_month.year, _month.month, 1);
       final to = DateTime(_month.year, _month.month + 1, 0);
-      final data = await api.get('/transactions', query: {
-        'from': apiDate(from),
-        'to': apiDate(to),
-        'accountIds': _accountFilter.join(','),
-        'includeCards': '$_includeCards',
-        'cardDate': _cardDateView.name,
-      });
+      final data = await api.get(
+        '/transactions',
+        query: {
+          'from': apiDate(from),
+          'to': apiDate(to),
+          'accountIds': _accountFilter.join(','),
+          'includeCards': '$_includeCards',
+          'cardDate': _cardDateView.name,
+          'forecasts': '$_includeForecasts',
+        },
+      );
       if (!mounted) return;
       setState(() => _page = TransactionsPage.fromJson(data as Map<String, dynamic>));
       if (_scrollToToday) {
@@ -138,10 +153,27 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   Future<void> _togglePaid(TxItem t) async {
     setState(() => _busyId = t.id);
     try {
-      await context.read<Session>().api.patch('/transactions/${t.id}/status', {
-        'status': t.paid ? 'PENDING' : 'PAID',
-      });
+      await context.read<Session>().api.patch('/transactions/${t.id}/status', {'status': t.paid ? 'PENDING' : 'PAID'});
       await _catalog.refresh(); // recarrega esta lista e os saldos das contas
+    } catch (e) {
+      _snack(e.toString());
+    } finally {
+      if (mounted) setState(() => _busyId = null);
+    }
+  }
+
+  Future<void> _forecastAction(TxItem t, String action) async {
+    if (action == 'realize') {
+      await TransactionForm.open(context, abate: t);
+      return;
+    }
+    setState(() => _busyId = t.id);
+    try {
+      await context.read<Session>().api.patch('/transactions/${t.id}/forecast-state', {
+        'state': action == 'close' ? 'CLOSED' : 'OPEN',
+      });
+      await _catalog.refresh();
+      _snack(action == 'close' ? 'Previsão encerrada' : 'Previsão reaberta');
     } catch (e) {
       _snack(e.toString());
     } finally {
@@ -180,7 +212,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   }
 
   Future<void> _openFilters() async {
-    final result = await showModalBottomSheet<(Set<String>, bool, CardDateView)>(
+    final result = await showModalBottomSheet<(Set<String>, bool, CardDateView, bool)>(
       context: context,
       isScrollControlled: true,
       showDragHandle: true,
@@ -189,6 +221,8 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         selected: _accountFilter,
         includeCards: _includeCards,
         cardDateView: _cardDateView,
+        includeForecasts: _includeForecasts,
+        forecastDefault: _forecastDefault,
       ),
     );
     if (result == null) return;
@@ -196,6 +230,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
       _accountFilter = result.$1;
       _includeCards = result.$2;
       _cardDateView = result.$3; // antes de salvar, para o listener não recarregar de novo
+      _includeForecasts = result.$4;
     });
     _settings.setCardDateView(result.$3);
     _load();
@@ -205,7 +240,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
   Widget build(BuildContext context) {
     final session = context.watch<Session>();
     final catalog = context.watch<Catalog>();
-    final filtered = _accountFilter.isNotEmpty || !_includeCards;
+    final filtered = _accountFilter.isNotEmpty || !_includeCards || _includeForecasts != _forecastDefault;
     return Scaffold(
       appBar: AppBar(
         centerTitle: true,
@@ -259,11 +294,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
         ],
       ),
       body: _buildBody(),
-      floatingActionButton: FloatingActionButton(
-        tooltip: 'Novo lançamento',
-        onPressed: () => TransactionForm.open(context),
-        child: const Icon(Icons.add),
-      ),
+      floatingActionButton: const NewTransactionFab(),
     );
   }
 
@@ -293,11 +324,13 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
                 child: Text(
                   'Nenhum ponto dado neste mês ainda.',
                   textAlign: TextAlign.center,
-                  style: SewFonts.display(TextStyle(
-                    fontSize: 16,
-                    fontStyle: FontStyle.italic,
-                    color: Theme.of(context).colorScheme.onSurfaceVariant,
-                  )),
+                  style: SewFonts.display(
+                    TextStyle(
+                      fontSize: 16,
+                      fontStyle: FontStyle.italic,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
                 ),
               ),
             for (final day in page.days) ...[
@@ -309,29 +342,29 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
               for (final item in day.items)
                 switch (item) {
                   TxItem t => _TxTile(
-                      tx: t,
-                      busy: _busyId == t.id,
-                      onTogglePaid: () => _togglePaid(t),
-                      onTap: () => TransactionForm.open(context, existing: t),
-                    ),
+                    tx: t,
+                    busy: _busyId == t.id,
+                    onTogglePaid: () => _togglePaid(t),
+                    onForecastAction: (a) => _forecastAction(t, a),
+                    onTap: () => TransactionForm.open(context, existing: t),
+                  ),
                   InvoiceItem i => _InvoiceTile(
-                      invoice: i,
-                      busy: _busyId == i.id,
-                      onPay: () => _payInvoice(i),
-                      onTap: i.card == null
-                          ? null
-                          : () => CardDetailScreen.open(context, cardId: i.card!.id, invoiceId: i.id),
-                    ),
+                    invoice: i,
+                    busy: _busyId == i.id,
+                    onPay: () => _payInvoice(i),
+                    onTap: i.card == null
+                        ? null
+                        : () => CardDetailScreen.open(context, cardId: i.card!.id, invoiceId: i.id),
+                  ),
                 },
               if (day.items.isEmpty)
                 Padding(
                   padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
                   child: Text(
                     'Nada por aqui hoje.',
-                    style: SewFonts.display(TextStyle(
-                      fontStyle: FontStyle.italic,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    )),
+                    style: SewFonts.display(
+                      TextStyle(fontStyle: FontStyle.italic, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
                   ),
                 ),
             ],
@@ -343,12 +376,7 @@ class _TransactionsScreenState extends State<TransactionsScreen> {
 }
 
 class _MonthSwitcher extends StatelessWidget {
-  const _MonthSwitcher({
-    required this.month,
-    required this.onPrevious,
-    required this.onNext,
-    required this.onTapTitle,
-  });
+  const _MonthSwitcher({required this.month, required this.onPrevious, required this.onNext, required this.onTapTitle});
 
   final DateTime month;
   final VoidCallback onPrevious;
@@ -393,27 +421,31 @@ class _SummaryCard extends StatelessWidget {
     final caps = muted?.copyWith(letterSpacing: 1.1, fontWeight: FontWeight.w600);
 
     Widget stat(String label, int value, Color? color) => Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label.toUpperCase(), style: caps),
-              const SizedBox(height: 4),
-              Amount(value, color: color, style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
-            ],
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(), style: caps),
+          const SizedBox(height: 4),
+          Amount(
+            value,
+            color: color,
+            style: theme.textTheme.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
           ),
-        );
+        ],
+      ),
+    );
 
     Widget balance(String label, String hint, int value) => Expanded(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(label.toUpperCase(), style: caps),
-              const SizedBox(height: 2),
-              HeroAmount(value),
-              Text(hint, style: muted),
-            ],
-          ),
-        );
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label.toUpperCase(), style: caps),
+          const SizedBox(height: 2),
+          HeroAmount(value),
+          Text(hint, style: muted),
+        ],
+      ),
+    );
 
     return StitchedCard(
       child: Column(
@@ -461,13 +493,13 @@ class _DayHeader extends StatelessWidget {
     final value = theme.textTheme.bodySmall?.copyWith(fontWeight: FontWeight.w600);
 
     Widget line(String text, int cents) => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(text, style: label),
-            const SizedBox(width: 6),
-            Amount(cents, style: value),
-          ],
-        );
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(text, style: label),
+        const SizedBox(width: 6),
+        Amount(cents, style: value),
+      ],
+    );
 
     return Container(
       margin: const EdgeInsets.only(top: 10),
@@ -485,12 +517,14 @@ class _DayHeader extends StatelessWidget {
                       Flexible(
                         child: Text(
                           dayTitle(day.date),
-                          style: SewFonts.display(TextStyle(
-                            fontSize: 17,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: -0.2,
-                            color: scheme.onSurface,
-                          )),
+                          style: SewFonts.display(
+                            TextStyle(
+                              fontSize: 17,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: -0.2,
+                              color: scheme.onSurface,
+                            ),
+                          ),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -499,10 +533,7 @@ class _DayHeader extends StatelessWidget {
                         const SizedBox(width: 8),
                         Container(
                           padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: colors.accent,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
+                          decoration: BoxDecoration(color: colors.accent, borderRadius: BorderRadius.circular(6)),
                           child: Text(
                             'Hoje',
                             style: theme.textTheme.labelSmall?.copyWith(
@@ -517,10 +548,7 @@ class _DayHeader extends StatelessWidget {
                 ),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    line('realizado', day.balance.realized),
-                    line('previsto', day.balance.projected),
-                  ],
+                  children: [line('realizado', day.balance.realized), line('previsto', day.balance.projected)],
                 ),
               ],
             ),
@@ -547,23 +575,23 @@ class _Tag extends StatelessWidget {
       mainAxisSize: MainAxisSize.min,
       children: [
         if (icon != null) ...[Icon(icon, size: 12, color: c), const SizedBox(width: 3)],
-        Flexible(child: Text(text, style: style, maxLines: 1, overflow: TextOverflow.ellipsis)),
+        Flexible(
+          child: Text(text, style: style, maxLines: 1, overflow: TextOverflow.ellipsis),
+        ),
       ],
     );
   }
 }
 
 class _TxTile extends StatelessWidget {
-  const _TxTile({
-    required this.tx,
-    required this.busy,
-    required this.onTogglePaid,
-    this.onTap,
-  });
+  const _TxTile({required this.tx, required this.busy, required this.onTogglePaid, this.onForecastAction, this.onTap});
 
   final TxItem tx;
   final bool busy;
   final VoidCallback onTogglePaid;
+
+  /// Previsão: 'realize' (lançar o valor real), 'close' (encerrar) ou 'reopen'.
+  final ValueChanged<String>? onForecastAction;
   final VoidCallback? onTap;
 
   @override
@@ -590,68 +618,99 @@ class _TxTile extends StatelessWidget {
         _Tag('${tx.account?.name ?? '?'} → ${tx.toAccount?.name ?? '?'}', icon: Icons.account_balance_outlined)
       else if (tx.account != null)
         _Tag(tx.account!.name, icon: Icons.account_balance_outlined),
+      if (tx.isForecast) _Tag(forecastLabel(tx.forecast!), icon: Icons.insights_outlined, color: scheme.tertiary),
       if (tx.isFixed) const _Tag('Fixo', icon: Icons.repeat),
+      if (tx.isCounterpart)
+        const _Tag('Contrapartida', icon: Icons.compare_arrows)
+      else if (tx.hasCounterpart)
+        const _Tag('Com contrapartida', icon: Icons.compare_arrows),
       if (tx.overdue) _Tag('Atrasado', icon: Icons.warning_amber_rounded, color: colors.warning),
     ];
+    final forecast = tx.forecast;
+    // Previsão mostra o que falta abater; fica esmaecida (é estimativa).
+    final shownAmount = forecast == null ? tx.amount : forecast.remaining;
+    final dim = forecast != null || !tx.affectsBalance;
 
     return InkWell(
       onTap: onTap,
       child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-      child: Row(
-        children: [
-          IconBadge(icon: icon, color: iconColor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text.rich(
-                  TextSpan(children: [
-                    TextSpan(text: tx.description),
-                    if (tx.installmentNumber != null)
-                      TextSpan(
-                        text: '  ${tx.installmentNumber}/${tx.installmentTotal}',
-                        style: TextStyle(color: scheme.onSurfaceVariant),
-                      ),
-                  ]),
-                  style: theme.textTheme.bodyLarge,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                const SizedBox(height: 2),
-                Wrap(spacing: 10, runSpacing: 2, children: tags),
-              ],
+        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+        child: Row(
+          children: [
+            IconBadge(icon: icon, color: iconColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text.rich(
+                    TextSpan(
+                      children: [
+                        TextSpan(text: tx.description),
+                        if (tx.installmentNumber != null)
+                          TextSpan(
+                            text: '  ${tx.installmentNumber}/${tx.installmentTotal}',
+                            style: TextStyle(color: scheme.onSurfaceVariant),
+                          ),
+                      ],
+                    ),
+                    style: theme.textTheme.bodyLarge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Wrap(spacing: 10, runSpacing: 2, children: tags),
+                ],
+              ),
             ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            money(tx.amount),
-            style: SewFonts.mono(theme.textTheme.bodyMedium).copyWith(
-              color: tx.affectsBalance ? amountColor : amountColor.withValues(alpha: 0.7),
-              fontWeight: FontWeight.w600,
+            const SizedBox(width: 8),
+            Text(
+              money(shownAmount),
+              style: SewFonts.mono(theme.textTheme.bodyMedium).copyWith(
+                color: dim ? amountColor.withValues(alpha: 0.7) : amountColor,
+                fontWeight: FontWeight.w600,
+                fontStyle: forecast != null ? FontStyle.italic : null,
+              ),
             ),
-          ),
-          SizedBox(
-            width: 44,
-            child: !tx.affectsBalance
-                ? Tooltip(
-                    message: 'Entra no saldo pela fatura',
-                    child: Icon(Icons.credit_card, size: 18, color: scheme.outline),
-                  )
-                : busy
-                    ? const Center(child: SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)))
-                    : IconButton(
-                        tooltip: tx.paid ? 'Pago — marcar como pendente' : 'Pendente — marcar como pago',
-                        onPressed: onTogglePaid,
-                        icon: Icon(
-                          tx.paid ? Icons.check_circle : Icons.radio_button_unchecked,
-                          color: tx.paid ? colors.income : (tx.overdue ? colors.warning : scheme.outline),
-                        ),
+            SizedBox(
+              width: 44,
+              child: forecast != null
+                  ? busy
+                        ? const Center(
+                            child: SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                          )
+                        : PopupMenuButton<String>(
+                            tooltip: 'Ações da previsão',
+                            icon: Icon(Icons.more_vert, color: scheme.outline),
+                            onSelected: onForecastAction,
+                            itemBuilder: (_) => [
+                              if (forecast.isOpen) ...[
+                                const PopupMenuItem(value: 'realize', child: Text('Lançar valor real')),
+                                const PopupMenuItem(value: 'close', child: Text('Encerrar previsão')),
+                              ] else
+                                const PopupMenuItem(value: 'reopen', child: Text('Reabrir previsão')),
+                            ],
+                          )
+                  : !tx.affectsBalance
+                  ? Tooltip(
+                      message: 'Entra no saldo pela fatura',
+                      child: Icon(Icons.credit_card, size: 18, color: scheme.outline),
+                    )
+                  : busy
+                  ? const Center(
+                      child: SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : IconButton(
+                      tooltip: tx.paid ? 'Pago — marcar como pendente' : 'Pendente — marcar como pago',
+                      onPressed: onTogglePaid,
+                      icon: Icon(
+                        tx.paid ? Icons.check_circle : Icons.radio_button_unchecked,
+                        color: tx.paid ? colors.income : (tx.overdue ? colors.warning : scheme.outline),
                       ),
-          ),
-        ],
-      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -674,9 +733,9 @@ class _InvoiceTile extends StatelessWidget {
       InvoiceStatus.open => ('Aberta · fecha ${shortDate(invoice.closingDate)}', scheme.onSurfaceVariant),
       InvoiceStatus.closed => ('Fechada', scheme.onSurfaceVariant),
       InvoiceStatus.paid => (
-          invoice.lastPaidAt == null ? 'Paga' : 'Paga em ${shortDate(invoice.lastPaidAt!)}',
-          colors.income,
-        ),
+        invoice.lastPaidAt == null ? 'Paga' : 'Paga em ${shortDate(invoice.lastPaidAt!)}',
+        colors.income,
+      ),
       InvoiceStatus.overdue => ('Atrasada', colors.warning),
     };
     final shown = invoice.remaining > 0 ? invoice.remaining : invoice.total;
@@ -685,51 +744,67 @@ class _InvoiceTile extends StatelessWidget {
     return InkWell(
       onTap: onTap,
       child: Padding(
-      padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-      child: Row(
-        children: [
-          IconBadge(icon: Icons.credit_card, color: cardColor),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(invoice.description, style: theme.textTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
-                const SizedBox(height: 2),
-                Wrap(spacing: 10, runSpacing: 2, children: [
-                  if (invoice.account != null) _Tag(invoice.account!.name, icon: Icons.account_balance_outlined),
-                  _Tag(statusText, color: statusColor),
-                  if (invoice.paidAmount > 0 && invoice.remaining > 0)
-                    _Tag('pago ${money(invoice.paidAmount)} de ${money(invoice.total)}'),
-                ]),
-              ],
-            ),
-          ),
-          const SizedBox(width: 8),
-          Text(
-            money(shown),
-            style: SewFonts.mono(theme.textTheme.bodyMedium).copyWith(
-              color: colors.expense,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          SizedBox(
-            width: 44,
-            child: busy
-                ? const Center(child: SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)))
-                : invoice.status == InvoiceStatus.paid
-                    ? Icon(Icons.check_circle, color: colors.income)
-                    : IconButton(
-                        tooltip: 'Pagar fatura',
-                        onPressed: onPay,
-                        icon: Icon(
-                          Icons.radio_button_unchecked,
-                          color: invoice.status == InvoiceStatus.overdue ? colors.warning : scheme.outline,
+        padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
+        child: Row(
+          children: [
+            IconBadge(icon: Icons.credit_card, color: cardColor),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    invoice.description,
+                    style: theme.textTheme.bodyLarge,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 2),
+                  Wrap(
+                    spacing: 10,
+                    runSpacing: 2,
+                    children: [
+                      if (invoice.account != null) _Tag(invoice.account!.name, icon: Icons.account_balance_outlined),
+                      _Tag(statusText, color: statusColor),
+                      if (invoice.paidAmount > 0 && invoice.remaining > 0)
+                        _Tag('pago ${money(invoice.paidAmount)} de ${money(invoice.total)}'),
+                      if (invoice.forecastTotal > 0)
+                        _Tag(
+                          '+ ${money(invoice.forecastTotal)} previsto',
+                          icon: Icons.insights_outlined,
+                          color: scheme.tertiary,
                         ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              money(shown),
+              style: SewFonts.mono(
+                theme.textTheme.bodyMedium,
+              ).copyWith(color: colors.expense, fontWeight: FontWeight.w600),
+            ),
+            SizedBox(
+              width: 44,
+              child: busy
+                  ? const Center(
+                      child: SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+                    )
+                  : invoice.status == InvoiceStatus.paid
+                  ? Icon(Icons.check_circle, color: colors.income)
+                  : IconButton(
+                      tooltip: 'Pagar fatura',
+                      onPressed: onPay,
+                      icon: Icon(
+                        Icons.radio_button_unchecked,
+                        color: invoice.status == InvoiceStatus.overdue ? colors.warning : scheme.outline,
                       ),
-          ),
-        ],
-      ),
+                    ),
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -741,12 +816,16 @@ class _FilterSheet extends StatefulWidget {
     required this.selected,
     required this.includeCards,
     required this.cardDateView,
+    required this.includeForecasts,
+    required this.forecastDefault,
   });
 
   final List<Account> accounts;
   final Set<String> selected;
   final bool includeCards;
   final CardDateView cardDateView;
+  final bool includeForecasts;
+  final bool forecastDefault;
 
   @override
   State<_FilterSheet> createState() => _FilterSheetState();
@@ -756,6 +835,7 @@ class _FilterSheetState extends State<_FilterSheet> {
   late Set<String> _selected = {...widget.selected};
   late bool _includeCards = widget.includeCards;
   late CardDateView _cardDate = widget.cardDateView;
+  late bool _includeForecasts = widget.includeForecasts;
 
   @override
   Widget build(BuildContext context) {
@@ -804,14 +884,11 @@ class _FilterSheetState extends State<_FilterSheet> {
                     onSelectionChanged: (s) => setState(() => _cardDate = s.first),
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    switch (_cardDate) {
-                      CardDateView.invoice =>
-                        'Agrupadas na fatura: um lançamento por cartão no vencimento. Toque nele para ver as compras.',
-                      CardDateView.purchase => 'Cada compra no dia em que foi feita.',
-                    },
-                    style: theme.textTheme.bodySmall,
-                  ),
+                  Text(switch (_cardDate) {
+                    CardDateView.invoice =>
+                      'Agrupadas na fatura: um lançamento por cartão no vencimento. Toque nele para ver as compras.',
+                    CardDateView.purchase => 'Cada compra no dia em que foi feita.',
+                  }, style: theme.textTheme.bodySmall),
                 ],
               ),
             ),
@@ -822,6 +899,13 @@ class _FilterSheetState extends State<_FilterSheet> {
                 title: const Text('Mostrar compras no cartão'),
                 subtitle: const Text('Elas não mexem no saldo; a fatura sim'),
               ),
+            CheckboxListTile(
+              key: const ValueKey('includeForecasts'),
+              value: _includeForecasts,
+              onChanged: (v) => setState(() => _includeForecasts = v ?? true),
+              title: const Text('Considerar previsões'),
+              subtitle: const Text('Mostra as previsões abertas e soma o que falta abater no previsto'),
+            ),
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
               child: Row(
@@ -830,12 +914,13 @@ class _FilterSheetState extends State<_FilterSheet> {
                     onPressed: () => setState(() {
                       _selected = {};
                       _includeCards = true;
+                      _includeForecasts = widget.forecastDefault;
                     }),
                     child: const Text('Limpar'),
                   ),
                   const Spacer(),
                   FilledButton(
-                    onPressed: () => Navigator.pop(context, (_selected, _includeCards, _cardDate)),
+                    onPressed: () => Navigator.pop(context, (_selected, _includeCards, _cardDate, _includeForecasts)),
                     child: const Text('Aplicar'),
                   ),
                 ],

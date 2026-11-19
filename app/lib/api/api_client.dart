@@ -16,7 +16,7 @@ class ApiException implements Exception {
 /// Cliente HTTP da API do SewWallet. Valores em centavos, datas AAAA-MM-DD.
 class ApiClient {
   ApiClient({required this.baseUrl, this.token, this.onUnauthorized, http.Client? client})
-      : _client = client ?? _defaultClient;
+    : _client = client ?? _defaultClient;
 
   final String baseUrl;
   final String? token;
@@ -27,8 +27,7 @@ class ApiClient {
 
   static const _timeout = Duration(seconds: 20);
 
-  Future<dynamic> get(String path, {Map<String, String?>? query}) =>
-      _send('GET', path, query: query);
+  Future<dynamic> get(String path, {Map<String, String?>? query}) => _send('GET', path, query: query);
 
   Future<dynamic> post(String path, [Object? body]) => _send('POST', path, body: body ?? {});
 
@@ -37,8 +36,7 @@ class ApiClient {
 
   Future<dynamic> patch(String path, Object body) => _send('PATCH', path, body: body);
 
-  Future<dynamic> delete(String path, {Map<String, String?>? query}) =>
-      _send('DELETE', path, query: query);
+  Future<dynamic> delete(String path, {Map<String, String?>? query}) => _send('DELETE', path, query: query);
 
   Uri _uri(String path, Map<String, String?>? query) {
     final base = baseUrl.endsWith('/') ? baseUrl.substring(0, baseUrl.length - 1) : baseUrl;
@@ -50,12 +48,7 @@ class ApiClient {
     return params.isEmpty ? uri : uri.replace(queryParameters: params);
   }
 
-  Future<dynamic> _send(
-    String method,
-    String path, {
-    Map<String, String?>? query,
-    Object? body,
-  }) async {
+  Future<dynamic> _send(String method, String path, {Map<String, String?>? query, Object? body}) async {
     final request = http.Request(method, _uri(path, query));
     request.headers['Accept'] = 'application/json';
     if (token != null) request.headers['Authorization'] = 'Bearer $token';
@@ -78,9 +71,7 @@ class ApiClient {
 
     if (response.statusCode == 401 && token != null) onUnauthorized?.call();
     if (response.statusCode >= 400) {
-      final message = data is Map && data['error'] is String
-          ? data['error'] as String
-          : 'Erro ${response.statusCode}';
+      final message = data is Map && data['error'] is String ? data['error'] as String : 'Erro ${response.statusCode}';
       throw ApiException(message, status: response.statusCode);
     }
     return data;

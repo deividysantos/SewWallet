@@ -41,20 +41,20 @@ String decodeOfx(List<int> bytes) {
 
 class _Entry {
   _Entry(Map<String, dynamic> j)
-      : index = j['index'] as int,
-        memo = j['memo'] as String,
-        name = j['name'] as String,
-        date = parseDate(j['date'] as String),
-        amount = j['amount'] as int,
-        isCredit = j['type'] == 'INCOME',
-        status = j['status'] as String,
-        installmentNumber = (j['installment'] as Map?)?['number'] as int?,
-        installmentTotal = (j['installment'] as Map?)?['total'] as int?,
-        creates = j['creates'] as int,
-        matchDescription = (j['match'] as Map?)?['description'] as String?,
-        matchReason = (j['match'] as Map?)?['reason'] as String?,
-        description = TextEditingController(text: j['name'] as String),
-        categoryId = j['suggestedCategoryId'] as String?;
+    : index = j['index'] as int,
+      memo = j['memo'] as String,
+      name = j['name'] as String,
+      date = parseDate(j['date'] as String),
+      amount = j['amount'] as int,
+      isCredit = j['type'] == 'INCOME',
+      status = j['status'] as String,
+      installmentNumber = (j['installment'] as Map?)?['number'] as int?,
+      installmentTotal = (j['installment'] as Map?)?['total'] as int?,
+      creates = j['creates'] as int,
+      matchDescription = (j['match'] as Map?)?['description'] as String?,
+      matchReason = (j['match'] as Map?)?['reason'] as String?,
+      description = TextEditingController(text: j['name'] as String),
+      categoryId = j['suggestedCategoryId'] as String?;
 
   final int index;
   final String memo;
@@ -122,7 +122,8 @@ class _OfxImportScreenState extends State<OfxImportScreen> {
       _error = null;
     });
     try {
-      final data = await context.read<Session>().api.post('$_base/preview', {'ofx': widget.ofx}) as Map<String, dynamic>;
+      final data =
+          await context.read<Session>().api.post('$_base/preview', {'ofx': widget.ofx}) as Map<String, dynamic>;
       final stmt = data['statement'] as Map<String, dynamic>;
       setState(() {
         _entries = [for (final j in data['entries'] as List) _Entry(j as Map<String, dynamic>)];
@@ -150,18 +151,20 @@ class _OfxImportScreenState extends State<OfxImportScreen> {
     final catalog = context.read<Catalog>();
     setState(() => _saving = true);
     try {
-      final r = await api.post('$_base/import', {
-        'ofx': widget.ofx,
-        'items': [
-          for (final e in news)
-            {
-              'index': e.index,
-              'description': e.description.text.trim(),
-              'categoryId': e.categoryId,
-              'skip': !e.include,
-            },
-        ],
-      }) as Map<String, dynamic>;
+      final r =
+          await api.post('$_base/import', {
+                'ofx': widget.ofx,
+                'items': [
+                  for (final e in news)
+                    {
+                      'index': e.index,
+                      'description': e.description.text.trim(),
+                      'categoryId': e.categoryId,
+                      'skip': !e.include,
+                    },
+                ],
+              })
+              as Map<String, dynamic>;
       await catalog.refresh();
       if (!mounted) return;
       showSnack(context, '${r['created']} lançamento(s) criado(s), ${r['linked']} conciliado(s)');
@@ -208,15 +211,19 @@ class _OfxImportScreenState extends State<OfxImportScreen> {
     final news = _with('new');
     final matched = _with('matched');
     final ignored = _with('ignored');
-    final outOfPeriod = _fileEnd != null && _closingDate != null && (_fileEnd!.difference(_closingDate!).inDays).abs() > 7;
+    final outOfPeriod =
+        _fileEnd != null && _closingDate != null && (_fileEnd!.difference(_closingDate!).inDays).abs() > 7;
 
     Widget section(String title, [String? hint]) => Padding(
-          padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(title, style: theme.textTheme.titleSmall),
-            if (hint != null) Text(hint, style: muted),
-          ]),
-        );
+      padding: const EdgeInsets.fromLTRB(16, 20, 16, 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(title, style: theme.textTheme.titleSmall),
+          if (hint != null) Text(hint, style: muted),
+        ],
+      ),
+    );
 
     return ListView(
       padding: const EdgeInsets.only(bottom: 24),
@@ -225,33 +232,43 @@ class _OfxImportScreenState extends State<OfxImportScreen> {
           margin: const EdgeInsets.fromLTRB(16, 12, 16, 0),
           child: Padding(
             padding: const EdgeInsets.all(16),
-            child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('${_entries.length} lançamentos no arquivo', style: theme.textTheme.titleMedium),
-              const SizedBox(height: 4),
-              if (_fileStart != null && _fileEnd != null)
-                Text('Arquivo: ${shortDate(_fileStart!)} a ${shortDate(_fileEnd!)}/${_fileEnd!.year}', style: muted),
-              if (_closingDate != null)
-                Text('Fatura fecha em ${shortDate(_closingDate!)}/${_closingDate!.year}', style: muted),
-              const SizedBox(height: 8),
-              Wrap(spacing: 8, runSpacing: 4, children: [
-                Chip(label: Text('${news.length} novos'), visualDensity: VisualDensity.compact),
-                Chip(label: Text('${matched.length} já lançados'), visualDensity: VisualDensity.compact),
-                if (ignored.isNotEmpty) Chip(label: Text('${ignored.length} ignorados'), visualDensity: VisualDensity.compact),
-              ]),
-              if (outOfPeriod) ...[
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('${_entries.length} lançamentos no arquivo', style: theme.textTheme.titleMedium),
+                const SizedBox(height: 4),
+                if (_fileStart != null && _fileEnd != null)
+                  Text('Arquivo: ${shortDate(_fileStart!)} a ${shortDate(_fileEnd!)}/${_fileEnd!.year}', style: muted),
+                if (_closingDate != null)
+                  Text('Fatura fecha em ${shortDate(_closingDate!)}/${_closingDate!.year}', style: muted),
                 const SizedBox(height: 8),
-                Row(children: [
-                  Icon(Icons.warning_amber_rounded, size: 18, color: theme.colorScheme.error),
-                  const SizedBox(width: 6),
-                  Expanded(
-                    child: Text(
-                      'O período do arquivo não bate com o fechamento desta fatura. Confira se é a fatura certa.',
-                      style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
-                    ),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 4,
+                  children: [
+                    Chip(label: Text('${news.length} novos'), visualDensity: VisualDensity.compact),
+                    Chip(label: Text('${matched.length} já lançados'), visualDensity: VisualDensity.compact),
+                    if (ignored.isNotEmpty)
+                      Chip(label: Text('${ignored.length} ignorados'), visualDensity: VisualDensity.compact),
+                  ],
+                ),
+                if (outOfPeriod) ...[
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Icon(Icons.warning_amber_rounded, size: 18, color: theme.colorScheme.error),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'O período do arquivo não bate com o fechamento desta fatura. Confira se é a fatura certa.',
+                          style: theme.textTheme.bodySmall?.copyWith(color: theme.colorScheme.error),
+                        ),
+                      ),
+                    ],
                   ),
-                ]),
+                ],
               ],
-            ]),
+            ),
           ),
         ),
         if (news.isNotEmpty) ...[
@@ -268,7 +285,11 @@ class _OfxImportScreenState extends State<OfxImportScreen> {
                   dense: true,
                   leading: const Icon(Icons.link),
                   title: Text(e.matchDescription ?? e.name, maxLines: 1, overflow: TextOverflow.ellipsis),
-                  subtitle: Text('No arquivo: ${e.memo} · ${shortDate(e.date)}', maxLines: 2, overflow: TextOverflow.ellipsis),
+                  subtitle: Text(
+                    'No arquivo: ${e.memo} · ${shortDate(e.date)}',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                   trailing: _AmountText(entry: e),
                 ),
             ],
@@ -320,9 +341,9 @@ class _AmountText extends StatelessWidget {
     return Text(
       '${entry.isCredit ? '− ' : ''}${money(entry.amount)}',
       style: Theme.of(context).textTheme.bodyLarge?.copyWith(
-            color: entry.isCredit ? colors.income : null,
-            fontFeatures: const [FontFeature.tabularFigures()],
-          ),
+        color: entry.isCredit ? colors.income : null,
+        fontFeatures: const [FontFeature.tabularFigures()],
+      ),
     );
   }
 }
@@ -350,51 +371,59 @@ class _NewEntryTile extends StatelessWidget {
         opacity: e.include ? 1 : 0.5,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(4, 4, 16, 12),
-          child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Checkbox(
-              value: e.include,
-              onChanged: (v) {
-                e.include = v ?? false;
-                onChanged();
-              },
-            ),
-            Expanded(
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                const SizedBox(height: 12),
-                Row(children: [
-                  Expanded(child: Text(details, style: muted)),
-                  _AmountText(entry: e),
-                ]),
-                Text('No arquivo: ${e.memo}', style: muted, maxLines: 2, overflow: TextOverflow.ellipsis),
-                if (e.creates > 1)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      'Cria ${e.creates} parcelas: ${e.installmentNumber} a ${e.installmentTotal} (esta e as próximas faturas)',
-                      style: muted?.copyWith(color: theme.colorScheme.primary),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Checkbox(
+                value: e.include,
+                onChanged: (v) {
+                  e.include = v ?? false;
+                  onChanged();
+                },
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(child: Text(details, style: muted)),
+                        _AmountText(entry: e),
+                      ],
                     ),
-                  ),
-                const SizedBox(height: 8),
-                TextField(
-                  controller: e.description,
-                  enabled: e.include,
-                  decoration: const InputDecoration(labelText: 'Nome', isDense: true),
-                  textCapitalization: TextCapitalization.sentences,
+                    Text('No arquivo: ${e.memo}', style: muted, maxLines: 2, overflow: TextOverflow.ellipsis),
+                    if (e.creates > 1)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Text(
+                          'Cria ${e.creates} parcelas: ${e.installmentNumber} a ${e.installmentTotal} (esta e as próximas faturas)',
+                          style: muted?.copyWith(color: theme.colorScheme.primary),
+                        ),
+                      ),
+                    const SizedBox(height: 8),
+                    TextField(
+                      controller: e.description,
+                      enabled: e.include,
+                      decoration: const InputDecoration(labelText: 'Nome', isDense: true),
+                      textCapitalization: TextCapitalization.sentences,
+                    ),
+                    const SizedBox(height: 8),
+                    CategoryDropdown(
+                      income: e.isCredit,
+                      value: e.categoryId,
+                      dense: true,
+                      enabled: e.include,
+                      onChanged: (v) {
+                        e.categoryId = v;
+                        onChanged();
+                      },
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 8),
-                CategoryDropdown(
-                  income: e.isCredit,
-                  value: e.categoryId,
-                  dense: true,
-                  enabled: e.include,
-                  onChanged: (v) {
-                    e.categoryId = v;
-                    onChanged();
-                  },
-                ),
-              ]),
-            ),
-          ]),
+              ),
+            ],
+          ),
         ),
       ),
     );

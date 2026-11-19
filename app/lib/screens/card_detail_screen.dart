@@ -13,6 +13,7 @@ import '../widgets/stitch.dart';
 import 'card_form.dart';
 import 'cards_screen.dart';
 import 'ofx_import_screen.dart';
+import 'transaction_form.dart';
 
 String _refLabel(DateTime ref) {
   final s = DateFormat('MMMM yyyy', 'pt_BR').format(ref);
@@ -28,7 +29,9 @@ class CardDetailScreen extends StatefulWidget {
 
   static Future<void> open(BuildContext context, {required String cardId, String? invoiceId}) =>
       Navigator.of(context).push(
-        MaterialPageRoute(builder: (_) => CardDetailScreen(cardId: cardId, invoiceId: invoiceId)),
+        MaterialPageRoute(
+          builder: (_) => CardDetailScreen(cardId: cardId, invoiceId: invoiceId),
+        ),
       );
 
   @override
@@ -41,6 +44,9 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
   InvoiceSummary? _invoice;
   List<InvoiceEntry> _items = [];
   List<InvoiceEntry> _payments = [];
+
+  /// Previsões abertas no cartão que caem nesta fatura (fora do total).
+  List<TxItem> _forecasts = [];
   bool _loading = true;
   String? _error;
 
@@ -91,7 +97,25 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
       _invoice = InvoiceSummary.fromJson(data);
       _items = [for (final j in data['items'] as List) InvoiceEntry.fromJson(j as Map<String, dynamic>)];
       _payments = [for (final j in data['payments'] as List) InvoiceEntry.fromJson(j as Map<String, dynamic>)];
+      _forecasts = [
+        for (final j in (data['forecasts'] as List? ?? const [])) TxItem.fromJson(j as Map<String, dynamic>),
+      ];
     });
+  }
+
+  /// Abre o lançamento (compra, estorno, pagamento ou previsão) para editar ou excluir.
+  Future<void> _openTx(String id, {TxItem? item}) async {
+    final api = context.read<Session>().api;
+    final currentId = _invoice?.id;
+    try {
+      final tx = item ?? TxItem.fromJson(await api.get('/transactions/$id') as Map<String, dynamic>);
+      if (!mounted) return;
+      final changed = await TransactionForm.open(context, existing: tx);
+      // A compra pode ter mudado de fatura (data/cartão) ou sido excluída.
+      if (changed == true && mounted) await _loadInvoices(selectId: currentId);
+    } catch (e) {
+      if (mounted) showSnack(context, e.toString());
+    }
   }
 
   Future<void> _go(int delta) async {
@@ -146,7 +170,10 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     final catalog = context.watch<Catalog>();
     final card = catalog.card(widget.cardId);
     if (card == null) {
-      return Scaffold(appBar: AppBar(), body: const EmptyView(icon: Icons.credit_card_off, message: 'Cartão não encontrado'));
+      return Scaffold(
+        appBar: AppBar(),
+        body: const EmptyView(icon: Icons.credit_card_off, message: 'Cartão não encontrado'),
+      );
     }
     return Scaffold(
       appBar: AppBar(
@@ -193,11 +220,14 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
     final muted = theme.textTheme.labelSmall?.copyWith(color: theme.colorScheme.onSurfaceVariant);
 
     Widget info(String label, String value) => Expanded(
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(label, style: muted),
-            Text(value, style: theme.textTheme.bodyMedium),
-          ]),
-        );
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(label, style: muted),
+          Text(value, style: theme.textTheme.bodyMedium),
+        ],
+      ),
+    );
 
     return RefreshIndicator(
       onRefresh: () => _loadInvoices(selectId: inv.id),
@@ -240,7 +270,10 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
                       Expanded(
                         child: Text(
                           money(inv.total),
-                          style: theme.textTheme.headlineMedium?.copyWith(color: colors.expense, fontWeight: FontWeight.w600),
+                          style: theme.textTheme.headlineMedium?.copyWith(
+                            color: colors.expense,
+                            fontWeight: FontWeight.w600,
+                          ),
                         ),
                       ),
                       Chip(
@@ -251,15 +284,14 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
                     ],
                   ),
                   const SizedBox(height: 12),
-                  Row(children: [
-                    info('Fecha', '${shortDate(inv.closingDate)}/${inv.closingDate.year}'),
-                    info('Vence', '${shortDate(inv.dueDate)}/${inv.dueDate.year}'),
-                  ]),
+                  Row(
+                    children: [
+                      info('Fecha', '${shortDate(inv.closingDate)}/${inv.closingDate.year}'),
+                      info('Vence', '${shortDate(inv.dueDate)}/${inv.dueDate.year}'),
+                    ],
+                  ),
                   const SizedBox(height: 8),
-                  Row(children: [
-                    info('Pago', money(inv.paid)),
-                    info('Falta pagar', money(inv.remaining)),
-                  ]),
+                  Row(children: [info('Pago', money(inv.paid)), info('Falta pagar', money(inv.remaining))]),
                   if (inv.remaining > 0) ...[
                     const SizedBox(height: 16),
                     FilledButton.icon(
@@ -286,9 +318,12 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
           ),
           for (final it in _items)
             ListTile(
+              onTap: () => _openTx(it.id),
               leading: IconBadge(icon: categoryIcon(it.category?.icon), color: hexColor(it.category?.color)),
               title: Text(
-                it.installmentNumber == null ? it.description : '${it.description}  ${it.installmentNumber}/${it.installmentTotal}',
+                it.installmentNumber == null
+                    ? it.description
+                    : '${it.description}  ${it.installmentNumber}/${it.installmentTotal}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
               ),
@@ -301,6 +336,37 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
                 ),
               ),
             ),
+          if (_forecasts.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 0),
+              child: Text('Previsões (${_forecasts.length})', style: theme.textTheme.titleSmall),
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 2, 16, 4),
+              child: Text(
+                'Valores estimados: não entram no total nem no valor a pagar. '
+                'Previsto ao todo: ${money(_forecasts.fold<int>(0, (s, f) => s + (f.forecast?.remaining ?? 0)))}',
+                style: muted,
+              ),
+            ),
+            for (final f in _forecasts)
+              ListTile(
+                onTap: () => _openTx(f.id, item: f),
+                leading: IconBadge(icon: Icons.insights_outlined, color: theme.colorScheme.tertiary),
+                title: Text(f.description, maxLines: 1, overflow: TextOverflow.ellipsis),
+                subtitle: Text(
+                  'até ${shortDate(f.date)} · ${forecastLabel(f.forecast!)}'
+                  '${f.forecast!.abated > 0 ? ' · abatido ${money(f.forecast!.abated)}' : ''}',
+                ),
+                trailing: Text(
+                  money(f.forecast!.remaining),
+                  style: theme.textTheme.bodyLarge?.copyWith(
+                    color: theme.colorScheme.tertiary,
+                    fontFeatures: const [FontFeature.tabularFigures()],
+                  ),
+                ),
+              ),
+          ],
           if (_payments.isNotEmpty) ...[
             Padding(
               padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
@@ -308,6 +374,7 @@ class _CardDetailScreenState extends State<CardDetailScreen> {
             ),
             for (final p in _payments)
               ListTile(
+                onTap: () => _openTx(p.id),
                 leading: IconBadge(icon: Icons.payments_outlined, color: colors.income),
                 title: Text(p.description, maxLines: 1, overflow: TextOverflow.ellipsis),
                 subtitle: Text('${shortDate(p.date)} · ${p.paid ? 'pago' : 'agendado'}'),
@@ -382,10 +449,7 @@ class _PaySheetState extends State<_PaySheet> {
             const SizedBox(height: 4),
             Text('Falta pagar ${money(widget.remaining)}. Pode pagar só uma parte.', style: theme.textTheme.bodySmall),
             const SizedBox(height: 16),
-            MoneyField(
-              controller: _amount,
-              validator: (c) => c <= 0 ? 'Informe o valor' : null,
-            ),
+            MoneyField(controller: _amount, validator: (c) => c <= 0 ? 'Informe o valor' : null),
             const SizedBox(height: 16),
             DropdownButtonFormField<String>(
               initialValue: accounts.any((a) => a.id == _accountId) ? _accountId : null,

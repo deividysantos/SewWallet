@@ -16,9 +16,9 @@ class Amount extends StatelessWidget {
     final colors = FinanceColors.of(context);
     return Text(
       money(cents),
-      style: SewFonts.mono(style ?? DefaultTextStyle.of(context).style).copyWith(
-        color: color ?? (cents < 0 ? colors.expense : null),
-      ),
+      style: SewFonts.mono(
+        style ?? DefaultTextStyle.of(context).style,
+      ).copyWith(color: color ?? (cents < 0 ? colors.expense : null)),
     );
   }
 }
@@ -40,13 +40,15 @@ class HeroAmount extends StatelessWidget {
       child: Text(
         money(cents),
         maxLines: 1,
-        style: SewFonts.display(TextStyle(
-          fontSize: fontSize,
-          fontWeight: FontWeight.w600,
-          letterSpacing: -0.6,
-          color: color ?? (cents < 0 ? colors.expense : Theme.of(context).colorScheme.onSurface),
-          fontFeatures: const [FontFeature.tabularFigures()],
-        )),
+        style: SewFonts.display(
+          TextStyle(
+            fontSize: fontSize,
+            fontWeight: FontWeight.w600,
+            letterSpacing: -0.6,
+            color: color ?? (cents < 0 ? colors.expense : Theme.of(context).colorScheme.onSurface),
+            fontFeatures: const [FontFeature.tabularFigures()],
+          ),
+        ),
       ),
     );
   }
@@ -96,7 +98,11 @@ class EmptyView extends StatelessWidget {
           children: [
             Icon(icon, size: 48, color: scheme.outline),
             const SizedBox(height: 12),
-            Text(message, textAlign: TextAlign.center, style: TextStyle(color: scheme.onSurfaceVariant)),
+            Text(
+              message,
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant),
+            ),
             if (action != null) ...[const SizedBox(height: 16), action!],
           ],
         ),
@@ -165,8 +171,16 @@ Future<bool> confirm(
 
 /// Cores sugeridas para contas e cartões.
 const swatches = [
-  '#820AD1', '#EC7000', '#43A047', '#1E88E5', '#E53935',
-  '#00897B', '#FDD835', '#6D4C41', '#546E7A', '#D81B60',
+  '#820AD1',
+  '#EC7000',
+  '#43A047',
+  '#1E88E5',
+  '#E53935',
+  '#00897B',
+  '#FDD835',
+  '#6D4C41',
+  '#546E7A',
+  '#D81B60',
 ];
 
 class ColorChoice extends StatelessWidget {
@@ -192,10 +206,7 @@ class ColorChoice extends StatelessWidget {
               decoration: BoxDecoration(
                 color: hexColor(hex),
                 shape: BoxShape.circle,
-                border: Border.all(
-                  color: value == hex ? scheme.onSurface : Colors.transparent,
-                  width: 3,
-                ),
+                border: Border.all(color: value == hex ? scheme.onSurface : Colors.transparent, width: 3),
               ),
             ),
           ),

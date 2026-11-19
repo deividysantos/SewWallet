@@ -15,13 +15,19 @@ enum CardDateView {
 class AppSettings extends ChangeNotifier {
   static const _kCardDateView = 'settings.cardDateView';
 
+  static const _kIncludeForecasts = 'settings.includeForecasts';
+
   CardDateView cardDateView = CardDateView.invoice;
+
+  /// Valor inicial do "Considerar previsões" na lista e nos relatórios.
+  bool includeForecasts = true;
 
   Future<void> restore() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       // "payment" (versões antigas: compras soltas no vencimento) virou a visão agrupada.
       cardDateView = prefs.getString(_kCardDateView) == 'purchase' ? CardDateView.purchase : CardDateView.invoice;
+      includeForecasts = prefs.getBool(_kIncludeForecasts) ?? true;
     } catch (_) {
       // Sem armazenamento: fica no padrão.
     }
@@ -34,6 +40,16 @@ class AppSettings extends ChangeNotifier {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.setString(_kCardDateView, v.name);
+    } catch (_) {}
+  }
+
+  Future<void> setIncludeForecasts(bool v) async {
+    if (v == includeForecasts) return;
+    includeForecasts = v;
+    notifyListeners();
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_kIncludeForecasts, v);
     } catch (_) {}
   }
 }

@@ -8,7 +8,9 @@ import { authRouter } from './routes/auth';
 import { cardsRouter } from './routes/cards';
 import { categoriesRouter } from './routes/categories';
 import { invoicesRouter } from './routes/invoices';
+import { reportFiltersRouter } from './routes/reportFilters';
 import { reportsRouter } from './routes/reports';
+import { suggestionsRouter } from './routes/suggestions';
 import { transactionsRouter } from './routes/transactions';
 
 export function createApp() {
@@ -28,6 +30,8 @@ export function createApp() {
   app.use('/invoices', requireAuth, invoicesRouter);
   app.use('/transactions', requireAuth, transactionsRouter);
   app.use('/reports', requireAuth, reportsRouter);
+  app.use('/report-filters', requireAuth, reportFiltersRouter);
+  app.use('/suggestions', requireAuth, suggestionsRouter);
 
   app.use((_req, res) => {
     res.status(404).json({ error: 'Rota não encontrada' });

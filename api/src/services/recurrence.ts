@@ -1,6 +1,7 @@
 import type { Frequency, Recurrence } from '@prisma/client';
 import { prisma, type Db } from '../db';
-import { addDays, addMonths, fromDate, minDate, toDate, type DateStr } from '../lib/dates';
+import { addDays, addMonths, fromDate, minDate, toDate, today as todayFn, type DateStr } from '../lib/dates';
+import { createCounterpart } from './counterpart';
 import { invoiceIdForPurchase } from './invoices';
 
 /** Quantos meses à frente os lançamentos fixos ficam gerados. */
@@ -56,12 +57,15 @@ export async function generateRecurrence(db: Db, rec: Recurrence, until: DateStr
     rec.categoryId && (await db.category.findUnique({ where: { id: rec.categoryId } })) ? rec.categoryId : null;
 
   const dates = occurrencesBetween(rec, generatedUntil, target);
+  const today = todayFn();
   for (const d of dates) {
-    await db.transaction.create({
+    const created = await db.transaction.create({
       data: {
         userId: rec.userId,
         type: rec.type,
-        status: card ? 'PAID' : 'PENDING',
+        status: card && !rec.isForecast ? 'PAID' : 'PENDING',
+        isForecast: rec.isForecast,
+        forecastState: rec.isForecast ? 'OPEN' : null,
         description: rec.description,
         amount: rec.amount,
         date: toDate(d),
@@ -74,6 +78,9 @@ export async function generateRecurrence(db: Db, rec: Recurrence, until: DateStr
         recurrenceId: rec.id,
       },
     });
+    if (rec.withCounterpart && !rec.isForecast && rec.type !== 'TRANSFER') {
+      await createCounterpart(db, created, today);
+    }
   }
   return dates.length;
 }

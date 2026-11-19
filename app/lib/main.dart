@@ -50,9 +50,7 @@ class SewWalletApp extends StatelessWidget {
       builder: (context, child) => PhoneFrame(child: child!),
       home: Consumer<Session>(
         // Troca a chave ao entrar/sair para descartar o estado da sessão anterior.
-        builder: (_, s, _) => s.isLoggedIn
-            ? HomeShell(key: ValueKey(s.token))
-            : const LoginScreen(),
+        builder: (_, s, _) => s.isLoggedIn ? HomeShell(key: ValueKey(s.token)) : const LoginScreen(),
       ),
     );
   }

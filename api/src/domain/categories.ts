@@ -13,6 +13,8 @@ export interface CategoryTx {
   paysInvoiceId: string | null;
   /** Vencimento da fatura em que a compra no cartão entrou. */
   invoiceDueDate: DateStr | null;
+  /** Previsão: `amount` já é o valor restante; nunca entra como realizado. */
+  isForecast?: boolean;
 }
 
 export type CategoryKind = 'EXPENSE' | 'INCOME';
@@ -44,6 +46,7 @@ export function categoryAmount(tx: CategoryTx, opts: CategoryOptions): number | 
   }
 
   if (opts.basis === 'realized') {
+    if (tx.isForecast) return null;
     // No cartão, a compra já aconteceu quando a data chega; na conta, quando está paga.
     if (tx.cardId ? tx.date > opts.today : tx.status !== 'PAID') return null;
   }

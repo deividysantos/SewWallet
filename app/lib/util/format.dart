@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import '../models/ledger.dart';
+
 final _money = NumberFormat.currency(locale: 'pt_BR', symbol: r'R$');
 
 /// Centavos -> "R$ 1.234,56".
@@ -16,6 +18,13 @@ String monthTitle(DateTime d) => _capitalize(DateFormat('MMMM yyyy', 'pt_BR').fo
 
 /// "18/11"
 String shortDate(DateTime d) => DateFormat('dd/MM', 'pt_BR').format(d);
+
+/// Etiqueta de uma previsão: "Previsão", "Previsão · resta R$ 30,00 de R$ 100,00", "Previsão expirada"...
+String forecastLabel(ForecastInfo f) => switch (f.state) {
+  ForecastState.open => f.abated > 0 ? 'Previsão · resta ${money(f.remaining)} de ${money(f.planned)}' : 'Previsão',
+  ForecastState.closed => 'Previsão encerrada',
+  ForecastState.expired => 'Previsão expirada',
+};
 
 /// Formato da API: AAAA-MM-DD.
 String apiDate(DateTime d) => DateFormat('yyyy-MM-dd').format(d);

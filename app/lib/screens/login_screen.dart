@@ -42,11 +42,7 @@ class _LoginScreenState extends State<LoginScreen> {
       _error = null;
     });
     try {
-      await context.read<Session>().login(
-            server: _server.text,
-            username: _username.text,
-            password: _password.text,
-          );
+      await context.read<Session>().login(server: _server.text, username: _username.text, password: _password.text);
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
     } finally {
@@ -74,19 +70,14 @@ class _LoginScreenState extends State<LoginScreen> {
                     Text(
                       'Finanças sob medida, no seu servidor.',
                       textAlign: TextAlign.center,
-                      style: SewFonts.display(TextStyle(
-                        fontSize: 16,
-                        fontStyle: FontStyle.italic,
-                        color: scheme.onSurfaceVariant,
-                      )),
+                      style: SewFonts.display(
+                        TextStyle(fontSize: 16, fontStyle: FontStyle.italic, color: scheme.onSurfaceVariant),
+                      ),
                     ),
                     const SizedBox(height: 36),
                     TextFormField(
                       controller: _username,
-                      decoration: const InputDecoration(
-                        labelText: 'Usuário',
-                        prefixIcon: Icon(Icons.person_outline),
-                      ),
+                      decoration: const InputDecoration(labelText: 'Usuário', prefixIcon: Icon(Icons.person_outline)),
                       autofillHints: const [AutofillHints.username],
                       textInputAction: TextInputAction.next,
                       autocorrect: false,
@@ -133,7 +124,11 @@ class _LoginScreenState extends State<LoginScreen> {
                     ),
                     if (_error != null) ...[
                       const SizedBox(height: 8),
-                      Text(_error!, style: TextStyle(color: scheme.error), textAlign: TextAlign.center),
+                      Text(
+                        _error!,
+                        style: TextStyle(color: scheme.error),
+                        textAlign: TextAlign.center,
+                      ),
                     ],
                     const SizedBox(height: 16),
                     FilledButton(

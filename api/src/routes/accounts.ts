@@ -4,6 +4,7 @@ import { prisma } from '../db';
 import { buildCashEvents } from '../domain/cashflow';
 import { endOfMonth, today } from '../lib/dates';
 import { parse } from '../lib/http';
+import { expireForecasts } from '../services/forecasts';
 import { loadLedger } from '../services/ledger';
 import { ownedAccount } from '../services/owned';
 
@@ -21,6 +22,8 @@ const accountSchema = z.object({
 /** Contas com saldo atual (realizado) e previsto para o fim do mês. */
 accountsRouter.get('/', async (req, res) => {
   const t = today();
+  await expireForecasts(req.userId, t);
+  // Saldos das contas não consideram previsões (ledger.txs só tem lançamentos reais).
   const ledger = await loadLedger(req.userId, t);
   const events = buildCashEvents(ledger.txs, ledger.invoices, t, null);
   const monthEnd = endOfMonth(t);

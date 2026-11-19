@@ -12,6 +12,7 @@ import '../state/settings.dart';
 import '../theme.dart';
 import '../util/format.dart';
 import '../widgets/common.dart';
+import '../widgets/preferred_filter.dart';
 import '../widgets/stitch.dart';
 import 'transaction_form.dart';
 
@@ -125,18 +126,22 @@ class _Period {
 
 /// Opções do relatório (as mesmas valem para o detalhe de uma categoria).
 class _Options {
-  _Options({required this.income, required this.realized, required this.byPayment});
+  _Options({required this.income, required this.realized, required this.byPayment, required this.forecasts});
   final bool income;
   final bool realized;
   final bool byPayment;
 
+  /// Considerar previsões abertas (só faz diferença no previsto).
+  final bool forecasts;
+
   Map<String, String> query(DateTimeRange w) => {
-        'kind': income ? 'INCOME' : 'EXPENSE',
-        'basis': realized ? 'realized' : 'projected',
-        'cardDate': byPayment ? 'payment' : 'purchase',
-        'from': apiDate(w.start),
-        'to': apiDate(w.end),
-      };
+    'kind': income ? 'INCOME' : 'EXPENSE',
+    'basis': realized ? 'realized' : 'projected',
+    'cardDate': byPayment ? 'payment' : 'purchase',
+    'forecasts': '$forecasts',
+    'from': apiDate(w.start),
+    'to': apiDate(w.end),
+  };
 }
 
 /// Quanto foi gasto (ou recebido) por categoria, com comparação e média.
@@ -153,8 +158,10 @@ class CategoryReportScreen extends StatefulWidget {
 class _CategoryReportScreenState extends State<CategoryReportScreen> {
   bool _income = false;
   bool _realized = false;
+
   /// Agrupado na fatura ou "data do pagamento" = gasto no mês em que a fatura vence.
   late bool _byPayment = context.read<AppSettings>().cardDateView == CardDateView.invoice;
+  late bool _forecasts = context.read<AppSettings>().includeForecasts;
   bool _yearView = false;
   int _offset = 0;
   DateTimeRange? _custom;
@@ -168,7 +175,7 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
   int _seenRevision = -1;
 
   _Period get _period => _Period(yearView: _yearView, offset: _offset, custom: _custom);
-  _Options get _options => _Options(income: _income, realized: _realized, byPayment: _byPayment);
+  _Options get _options => _Options(income: _income, realized: _realized, byPayment: _byPayment, forecasts: _forecasts);
 
   @override
   void initState() {
@@ -176,7 +183,34 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
     _catalog = context.read<Catalog>();
     _seenRevision = _catalog.revision;
     _catalog.addListener(_onCatalog);
+    final saved = _catalog.preferred(_reportKey);
+    if (saved != null) _applyFilter(saved, reload: false);
     _load();
+  }
+
+  static const _reportKey = 'categories';
+
+  Map<String, dynamic> _currentFilter() => {
+    'income': _income,
+    'realized': _realized,
+    'byPayment': _byPayment,
+    'forecasts': _forecasts,
+    'yearView': _yearView,
+  };
+
+  void _applyFilter(Map<String, dynamic> p, {bool reload = true}) {
+    void change() {
+      _income = filterBool(p, 'income') ?? false;
+      _realized = filterBool(p, 'realized') ?? false;
+      _byPayment = filterBool(p, 'byPayment') ?? _byPayment;
+      _forecasts = filterBool(p, 'forecasts') ?? _forecasts;
+      _yearView = filterBool(p, 'yearView') ?? false;
+      _offset = 0;
+      _custom = null;
+      _touched = null;
+    }
+
+    reload ? _set(change) : change();
   }
 
   void _onCatalog() {
@@ -245,9 +279,9 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
 
           final theme = Theme.of(ctx);
           Widget label(String text) => Padding(
-                padding: const EdgeInsets.only(top: 14, bottom: 6),
-                child: Text(text, style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
-              );
+            padding: const EdgeInsets.only(top: 14, bottom: 6),
+            child: Text(text, style: theme.textTheme.labelMedium?.copyWith(color: theme.colorScheme.onSurfaceVariant)),
+          );
 
           return SafeArea(
             child: SingleChildScrollView(
@@ -287,6 +321,18 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
                           ? 'Só o que já foi pago; no cartão, compras até hoje.'
                           : 'Inclui pendentes e lançamentos futuros do período (fixos, parcelas).',
                       style: theme.textTheme.bodySmall,
+                    ),
+                  ),
+                  CheckboxListTile(
+                    key: const ValueKey('categoryForecasts'),
+                    contentPadding: EdgeInsets.zero,
+                    value: _forecasts,
+                    onChanged: _realized ? null : (v) => change(() => _forecasts = v ?? true),
+                    title: const Text('Considerar previsões'),
+                    subtitle: Text(
+                      _realized
+                          ? 'O realizado nunca inclui previsões'
+                          : 'Previsões abertas entram pelo valor que falta abater',
                     ),
                   ),
                   label('Compras no cartão pela'),
@@ -351,12 +397,17 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
   Widget build(BuildContext context) {
     final report = _report;
     final period = _period;
-    final customized = _realized || _byPayment != (context.read<AppSettings>().cardDateView == CardDateView.invoice);
+    final settings = context.read<AppSettings>();
+    final customized =
+        _realized ||
+        _byPayment != (settings.cardDateView == CardDateView.invoice) ||
+        _forecasts != settings.includeForecasts;
 
     return Scaffold(
       appBar: AppBar(
         title: const Text('Por categoria'),
         actions: [
+          PreferredFilterButton(report: _reportKey, current: _currentFilter, apply: _applyFilter),
           IconButton(
             tooltip: 'Opções do relatório',
             onPressed: _openOptions,
@@ -409,8 +460,12 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
               ),
             ),
             if (_error != null && report == null)
-              Padding(padding: const EdgeInsets.only(top: 48), child: ErrorView(message: _error!, onRetry: _load))
-            else if (report != null) ..._content(report, period),
+              Padding(
+                padding: const EdgeInsets.only(top: 48),
+                child: ErrorView(message: _error!, onRetry: _load),
+              )
+            else if (report != null)
+              ..._content(report, period),
           ],
         ),
       ),
@@ -430,11 +485,9 @@ class _CategoryReportScreenState extends State<CategoryReportScreen> {
           child: Text(
             _income ? 'Nenhuma receita ${period.inLabel}.' : 'Nenhum gasto ${period.inLabel}. Bom sinal.',
             textAlign: TextAlign.center,
-            style: SewFonts.display(TextStyle(
-              fontSize: 16,
-              fontStyle: FontStyle.italic,
-              color: theme.colorScheme.onSurfaceVariant,
-            )),
+            style: SewFonts.display(
+              TextStyle(fontSize: 16, fontStyle: FontStyle.italic, color: theme.colorScheme.onSurfaceVariant),
+            ),
           ),
         ),
       ];
@@ -518,9 +571,15 @@ class _Summary extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: [
-              Expanded(child: _MiniStat(label: period.averageLabel, value: money(report.averageTotal))),
-              Expanded(child: _MiniStat(label: 'Por dia', value: money(report.total ~/ max(1, days)))),
-              Expanded(child: _MiniStat(label: 'Lançamentos', value: '${report.count}')),
+              Expanded(
+                child: _MiniStat(label: period.averageLabel, value: money(report.averageTotal)),
+              ),
+              Expanded(
+                child: _MiniStat(label: 'Por dia', value: money(report.total ~/ max(1, days))),
+              ),
+              Expanded(
+                child: _MiniStat(label: 'Lançamentos', value: '${report.count}'),
+              ),
             ],
           ),
         ],
@@ -553,7 +612,13 @@ class _MiniStat extends StatelessWidget {
 
 /// "▲ 12% vs outubro (R$ 300 a mais)". Em despesas, subir é ruim; em receitas, bom.
 class _Delta extends StatelessWidget {
-  const _Delta({required this.current, required this.previous, required this.income, required this.versus, this.compact = false});
+  const _Delta({
+    required this.current,
+    required this.previous,
+    required this.income,
+    required this.versus,
+    this.compact = false,
+  });
 
   final int current;
   final int previous;
@@ -570,10 +635,16 @@ class _Delta extends StatelessWidget {
 
     if (previous == 0 && current == 0) return const SizedBox.shrink();
     if (previous == 0) {
-      return Text(compact ? 'novo' : 'Nada em $versus', style: style.copyWith(color: theme.colorScheme.onSurfaceVariant));
+      return Text(
+        compact ? 'novo' : 'Nada em $versus',
+        style: style.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      );
     }
     if (diff == 0) {
-      return Text(compact ? 'igual' : 'Igual a $versus', style: style.copyWith(color: theme.colorScheme.onSurfaceVariant));
+      return Text(
+        compact ? 'igual' : 'Igual a $versus',
+        style: style.copyWith(color: theme.colorScheme.onSurfaceVariant),
+      );
     }
 
     final up = diff > 0;
@@ -583,7 +654,10 @@ class _Delta extends StatelessWidget {
     final text = compact
         ? '${up ? '▲' : '▼'} $pct%'
         : '${up ? '▲' : '▼'} $pct% vs $versus (${money(diff.abs())} a ${up ? 'mais' : 'menos'})';
-    return Text(text, style: style.copyWith(color: color, fontWeight: FontWeight.w600));
+    return Text(
+      text,
+      style: style.copyWith(color: color, fontWeight: FontWeight.w600),
+    );
   }
 }
 
@@ -659,12 +733,25 @@ class _Donut extends StatelessWidget {
                     style: theme.textTheme.labelMedium?.copyWith(color: scheme.onSurfaceVariant),
                   ),
                   if (focus != null) ...[
-                    FittedBox(child: Text(money(focus.$2), style: SewFonts.mono(theme.textTheme.bodyMedium).copyWith(fontWeight: FontWeight.w700))),
-                    Text('${(focus.$2 / max(1, total) * 100).round()}%',
-                        style: SewFonts.display(TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: scheme.onSurface))),
+                    FittedBox(
+                      child: Text(
+                        money(focus.$2),
+                        style: SewFonts.mono(theme.textTheme.bodyMedium).copyWith(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    Text(
+                      '${(focus.$2 / max(1, total) * 100).round()}%',
+                      style: SewFonts.display(
+                        TextStyle(fontSize: 22, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                      ),
+                    ),
                   ] else
-                    Text('toque numa fatia',
-                        style: SewFonts.display(TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: scheme.onSurfaceVariant))),
+                    Text(
+                      'toque numa fatia',
+                      style: SewFonts.display(
+                        TextStyle(fontSize: 13, fontStyle: FontStyle.italic, color: scheme.onSurfaceVariant),
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -753,10 +840,18 @@ class _CategoryRow extends StatelessWidget {
                   Row(
                     children: [
                       Expanded(
-                        child: Text(c.name, style: theme.textTheme.bodyLarge, maxLines: 1, overflow: TextOverflow.ellipsis),
+                        child: Text(
+                          c.name,
+                          style: theme.textTheme.bodyLarge,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
                       const SizedBox(width: 8),
-                      Text(money(c.total), style: SewFonts.mono(theme.textTheme.bodyMedium).copyWith(fontWeight: FontWeight.w600)),
+                      Text(
+                        money(c.total),
+                        style: SewFonts.mono(theme.textTheme.bodyMedium).copyWith(fontWeight: FontWeight.w600),
+                      ),
                     ],
                   ),
                   const SizedBox(height: 6),
@@ -846,7 +941,9 @@ class _HistoryBars extends StatelessWidget {
                       reservedSize: 18,
                       getTitlesWidget: (v, meta) {
                         final h = history[v.toInt()];
-                        return h.total == 0 ? const SizedBox.shrink() : Text(compact.format(h.total / 100), style: labelStyle);
+                        return h.total == 0
+                            ? const SizedBox.shrink()
+                            : Text(compact.format(h.total / 100), style: labelStyle);
                       },
                     ),
                   ),
@@ -863,14 +960,17 @@ class _HistoryBars extends StatelessWidget {
                 ),
                 barGroups: [
                   for (var i = 0; i < history.length; i++)
-                    BarChartGroupData(x: i, barRods: [
-                      BarChartRodData(
-                        toY: max(0, history[i].total).toDouble(),
-                        width: 22,
-                        color: i == history.length - 1 ? color : color.withValues(alpha: 0.35),
-                        borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
-                      ),
-                    ]),
+                    BarChartGroupData(
+                      x: i,
+                      barRods: [
+                        BarChartRodData(
+                          toY: max(0, history[i].total).toDouble(),
+                          width: 22,
+                          color: i == history.length - 1 ? color : color.withValues(alpha: 0.35),
+                          borderRadius: const BorderRadius.vertical(top: Radius.circular(6)),
+                        ),
+                      ],
+                    ),
                 ],
               ),
             ),
@@ -901,10 +1001,11 @@ class _CategoryDetailScreen extends StatefulWidget {
     required Color color,
     required _Period period,
     required _Options options,
-  }) =>
-      Navigator.of(context).push(MaterialPageRoute(
-        builder: (_) => _CategoryDetailScreen(category: category, color: color, period: period, options: options),
-      ));
+  }) => Navigator.of(context).push(
+    MaterialPageRoute(
+      builder: (_) => _CategoryDetailScreen(category: category, color: color, period: period, options: options),
+    ),
+  );
 
   @override
   State<_CategoryDetailScreen> createState() => _CategoryDetailScreenState();
@@ -944,10 +1045,10 @@ class _CategoryDetailScreenState extends State<_CategoryDetailScreen> {
       _error = null;
     });
     try {
-      final data = await context.read<Session>().api.get('/reports/categories/detail', query: {
-        ...widget.options.query(widget.period.window),
-        'categoryId': widget.category.id ?? 'none',
-      });
+      final data = await context.read<Session>().api.get(
+        '/reports/categories/detail',
+        query: {...widget.options.query(widget.period.window), 'categoryId': widget.category.id ?? 'none'},
+      );
       if (mounted) setState(() => _detail = CategoryDetail.fromJson(data as Map<String, dynamic>));
     } catch (e) {
       if (mounted) setState(() => _error = e.toString());
@@ -974,13 +1075,20 @@ class _CategoryDetailScreenState extends State<_CategoryDetailScreen> {
             StitchedCard(
               child: Row(
                 children: [
-                  IconBadge(icon: c.id == null ? Icons.label_off_outlined : categoryIcon(c.icon), color: widget.color, radius: 22),
+                  IconBadge(
+                    icon: c.id == null ? Icons.label_off_outlined : categoryIcon(c.icon),
+                    color: widget.color,
+                    radius: 22,
+                  ),
                   const SizedBox(width: 14),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(widget.period.title.toUpperCase(), style: muted?.copyWith(letterSpacing: 1.1, fontWeight: FontWeight.w600)),
+                        Text(
+                          widget.period.title.toUpperCase(),
+                          style: muted?.copyWith(letterSpacing: 1.1, fontWeight: FontWeight.w600),
+                        ),
                         HeroAmount(detail?.total ?? c.total, fontSize: 26),
                         _Delta(
                           current: c.total,
@@ -988,8 +1096,7 @@ class _CategoryDetailScreenState extends State<_CategoryDetailScreen> {
                           income: widget.options.income,
                           versus: widget.period.previousLabel,
                         ),
-                        if (c.average > 0)
-                          Text('Média dos 3 anteriores: ${money(c.average)}', style: muted),
+                        if (c.average > 0) Text('Média dos 3 anteriores: ${money(c.average)}', style: muted),
                       ],
                     ),
                   ),
@@ -997,7 +1104,10 @@ class _CategoryDetailScreenState extends State<_CategoryDetailScreen> {
               ),
             ),
             if (_error != null && detail == null)
-              Padding(padding: const EdgeInsets.only(top: 32), child: ErrorView(message: _error!, onRetry: _load))
+              Padding(
+                padding: const EdgeInsets.only(top: 32),
+                child: ErrorView(message: _error!, onRetry: _load),
+              )
             else if (detail != null) ...[
               if (detail.history.any((h) => h.total != 0))
                 _HistoryBars(title: 'Últimos 6 meses', history: detail.history, color: widget.color),
@@ -1050,7 +1160,11 @@ class _EntryTile extends StatelessWidget {
         padding: const EdgeInsets.fromLTRB(16, 10, 16, 10),
         child: Row(
           children: [
-            Icon(tx.card != null ? Icons.credit_card : Icons.account_balance_outlined, size: 18, color: scheme.onSurfaceVariant),
+            Icon(
+              tx.card != null ? Icons.credit_card : Icons.account_balance_outlined,
+              size: 18,
+              color: scheme.onSurfaceVariant,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Column(

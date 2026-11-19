@@ -1,9 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import type { CreditCard, Prisma, Transaction } from '@prisma/client';
 import { z } from 'zod';
-import { prisma } from '../db';
+import { prisma, type Db } from '../db';
 import { addDays, addMonths, maxDate, toDate, type DateStr } from '../lib/dates';
 import { dateStr, HttpError, id, money } from '../lib/http';
+import {
+  checkCanHaveCounterpart,
+  createCounterpart,
+  syncFromCounterpart,
+  syncFromOrigin,
+  syncGroupAmounts,
+} from './counterpart';
+import { checkForecastLink } from './forecasts';
 import { invoiceIdForPurchase } from './invoices';
 import { ownedAccount, ownedCard, ownedCategory, ownedTransaction } from './owned';
 import { generateRecurrence, horizon } from './recurrence';
@@ -24,6 +32,12 @@ export const createTxSchema = z
     toAccountId: id.nullish(),
     cardId: id.nullish(),
     notes: z.string().max(1000).nullish(),
+    /** Previsão: valor estimado, abatido depois pelos lançamentos reais. */
+    isForecast: z.boolean().optional(),
+    /** Lançamento real que abate uma previsão aberta. */
+    forecastId: id.nullish(),
+    /** Gera a contrapartida (tipo oposto, mesmo valor) ligada a cada lançamento criado. */
+    counterpart: z.boolean().optional(),
     installments: z
       .object({
         total: z.number().int().min(2).max(360),
@@ -51,6 +65,18 @@ export const createTxSchema = z
     }
     if (v.installments && v.recurrence) issue('Escolha parcelado OU fixo', 'recurrence');
     if (v.recurrence?.endDate && v.recurrence.endDate < v.date) issue('Fim antes do início', 'recurrence');
+    if (v.isForecast) {
+      if (v.type === 'TRANSFER') issue('Transferência não pode ser previsão', 'isForecast');
+      if (v.installments) issue('Previsão não pode ser parcelada', 'installments');
+      if (v.forecastId) issue('Uma previsão não abate outra', 'forecastId');
+    }
+    if (v.forecastId && (v.installments || v.recurrence)) {
+      issue('Só lançamentos avulsos abatem previsões', 'forecastId');
+    }
+    if (v.counterpart) {
+      if (v.type === 'TRANSFER') issue('Transferência não tem contrapartida', 'counterpart');
+      if (v.isForecast) issue('Previsão não tem contrapartida', 'counterpart');
+    }
   });
 
 export type CreateTxInput = z.infer<typeof createTxSchema>;
@@ -81,6 +107,13 @@ export function splitInstallments(total: number, n: number): number[] {
 /** Cria um lançamento simples, parcelado ou fixo. Retorna os lançamentos criados. */
 export async function createTransaction(userId: string, input: CreateTxInput, today: DateStr) {
   const card = await checkRefs(userId, input);
+  if (input.forecastId) await checkForecastLink(userId, input.forecastId, input.type);
+  const isForecast = input.isForecast ?? false;
+  const forecastFields = {
+    isForecast,
+    forecastState: isForecast ? ('OPEN' as const) : null,
+    forecastId: isForecast ? null : (input.forecastId ?? null),
+  };
 
   const common = {
     userId,
@@ -96,6 +129,15 @@ export async function createTransaction(userId: string, input: CreateTxInput, to
   const defaultStatus = (d: DateStr): 'PAID' | 'PENDING' => (d <= today ? 'PAID' : 'PENDING');
 
   return prisma.$transaction(async (tx) => {
+    const created = await createRows(tx);
+    if (input.counterpart && !input.recurrence) {
+      // Fixos geram a contrapartida junto de cada ocorrência (generateRecurrence).
+      for (const t of created) await createCounterpart(tx, t, today);
+    }
+    return created;
+  });
+
+  async function createRows(tx: Db): Promise<Transaction[]> {
     if (input.recurrence) {
       const rec = await tx.recurrence.create({
         data: {
@@ -106,10 +148,18 @@ export async function createTransaction(userId: string, input: CreateTxInput, to
           startDate: toDate(input.date),
           endDate: input.recurrence.endDate ? toDate(input.recurrence.endDate) : null,
           generatedUntil: toDate(addDays(input.date, -1)),
+          isForecast,
+          withCounterpart: input.counterpart ?? false,
         },
       });
       await generateRecurrence(tx, rec, maxDate(horizon(today), input.date));
-      if (!card && (input.status ?? 'PENDING') === 'PAID') {
+      if (isForecast) {
+        // Ocorrências de previsão que já passaram nascem expiradas.
+        await tx.transaction.updateMany({
+          where: { recurrenceId: rec.id, date: { lt: toDate(today) } },
+          data: { forecastState: 'EXPIRED' },
+        });
+      } else if (!card && (input.status ?? 'PENDING') === 'PAID') {
         // Ocorrências que já passaram entram como pagas.
         await tx.transaction.updateMany({
           where: { recurrenceId: rec.id, date: { lte: toDate(today) } },
@@ -151,11 +201,14 @@ export async function createTransaction(userId: string, input: CreateTxInput, to
       return created;
     }
 
-    const status = card ? 'PAID' : (input.status ?? defaultStatus(input.date));
+    // Previsão nunca está paga; o que conta como realizado são os lançamentos que a abatem.
+    const status = isForecast ? 'PENDING' : card ? 'PAID' : (input.status ?? defaultStatus(input.date));
     return [
       await tx.transaction.create({
         data: {
           ...common,
+          ...forecastFields,
+          forecastState: isForecast ? (input.date < today ? 'EXPIRED' : 'OPEN') : null,
           amount: input.amount,
           date: toDate(input.date),
           status,
@@ -164,7 +217,7 @@ export async function createTransaction(userId: string, input: CreateTxInput, to
         },
       }),
     ];
-  });
+  }
 }
 
 export const scopeSchema = z.enum(['one', 'future', 'all']).default('one');
@@ -180,6 +233,10 @@ export const updateTxSchema = z.object({
   toAccountId: id.optional(),
   cardId: id.optional(),
   notes: z.string().max(1000).nullish(),
+  /** Lançamento real: previsão que ele abate (null desvincula). */
+  forecastId: id.nullish(),
+  /** Lançamento de origem: true gera a contrapartida (se ainda não tem); false exclui a que existe. */
+  counterpart: z.boolean().optional(),
 });
 export type UpdateTxInput = z.infer<typeof updateTxSchema>;
 
@@ -218,7 +275,13 @@ export async function updateTransaction(userId: string, txId: string, input: Upd
       notes: input.notes,
     };
     await prisma.$transaction(async (tx) => {
+      const affected = await tx.transaction.findMany({ where: { ...where, userId }, select: { id: true } });
       await tx.transaction.updateMany({ where: { ...where, userId }, data });
+      await syncGroupAmounts(
+        tx,
+        affected.map((a) => a.id),
+        input.amount,
+      );
       if (current.recurrenceId) {
         await tx.recurrence.update({ where: { id: current.recurrenceId }, data });
       }
@@ -228,6 +291,9 @@ export async function updateTransaction(userId: string, txId: string, input: Upd
 
   if (current.paysInvoiceId && (input.cardId || input.toAccountId)) {
     throw new HttpError(400, 'Pagamento de fatura só pode mudar de conta');
+  }
+  if (current.counterpartOfId && (input.cardId || input.counterpart !== undefined)) {
+    throw new HttpError(400, 'A contrapartida fica sempre em uma conta');
   }
 
   const merged = {
@@ -242,10 +308,19 @@ export async function updateTransaction(userId: string, txId: string, input: Upd
   }
   const card = await checkRefs(userId, merged);
   const date = input.date ?? current.date.toISOString().slice(0, 10);
-  const status = card ? 'PAID' : (input.status ?? current.status);
+  const status = current.isForecast ? 'PENDING' : card ? 'PAID' : (input.status ?? current.status);
 
-  return prisma.$transaction(async (tx) =>
-    tx.transaction.update({
+  let forecastId = current.forecastId;
+  if (!current.isForecast && input.forecastId !== undefined && input.forecastId !== current.forecastId) {
+    if (input.forecastId) await checkForecastLink(userId, input.forecastId, current.type);
+    forecastId = input.forecastId ?? null;
+  }
+  // Mudar a data de uma previsão reabre (data futura) ou expira (data passada); encerrada continua encerrada.
+  const forecastState =
+    current.isForecast && current.forecastState !== 'CLOSED' ? (date < today ? 'EXPIRED' : 'OPEN') : current.forecastState;
+
+  return prisma.$transaction(async (tx) => {
+    const updated = await tx.transaction.update({
       where: { id: txId },
       data: {
         description: input.description,
@@ -253,11 +328,14 @@ export async function updateTransaction(userId: string, txId: string, input: Upd
         notes: input.notes,
         date: toDate(date),
         status,
-        paidAt: status === 'PAID' && !card ? (current.paidAt ?? toDate(minToday(date, today))) : null,
+        paidAt:
+          status === 'PAID' && !card ? (current.paidAt ?? toDate(minToday(date, today))) : null,
         categoryId: merged.categoryId,
         accountId: merged.accountId,
         toAccountId: merged.toAccountId,
         cardId: merged.cardId,
+        forecastId,
+        forecastState,
         // Só recalcula a fatura se mudou a data ou o cartão (preserva a fatura das parcelas).
         invoiceId: !card
           ? null
@@ -265,8 +343,21 @@ export async function updateTransaction(userId: string, txId: string, input: Upd
             ? await invoiceIdForPurchase(tx, card, date)
             : current.invoiceId,
       },
-    }),
-  );
+    });
+
+    if (updated.counterpartOfId) {
+      await syncFromCounterpart(tx, current, updated);
+    } else if (input.counterpart === false) {
+      await tx.transaction.deleteMany({ where: { counterpartOfId: updated.id } });
+    } else {
+      await syncFromOrigin(tx, current, updated, today);
+      if (input.counterpart && !(await tx.transaction.findUnique({ where: { counterpartOfId: updated.id } }))) {
+        checkCanHaveCounterpart(updated);
+        await createCounterpart(tx, updated, today);
+      }
+    }
+    return updated;
+  });
 }
 
 const minToday = (date: DateStr, today: DateStr) => (date < today ? date : today);
@@ -274,6 +365,7 @@ const minToday = (date: DateStr, today: DateStr) => (date < today ? date : today
 export async function setTransactionStatus(userId: string, txId: string, status: 'PENDING' | 'PAID', today: DateStr) {
   const current = await ownedTransaction(userId, txId);
   if (current.cardId) throw new HttpError(400, 'Compras no cartão são pagas pela fatura');
+  if (current.isForecast) throw new HttpError(400, 'Previsão não é paga: lance o valor real abatendo dela');
   return prisma.transaction.update({
     where: { id: txId },
     data: { status, paidAt: status === 'PAID' ? toDate(today) : null },
@@ -283,8 +375,14 @@ export async function setTransactionStatus(userId: string, txId: string, status:
 /** Exclui um lançamento; nos fixos/parcelados pode excluir os próximos ou todos. */
 export async function deleteTransaction(userId: string, txId: string, scope: Scope): Promise<number> {
   const current = await ownedTransaction(userId, txId);
+  if (current.counterpartOfId) {
+    // Excluir a contrapartida exclui a origem; a contrapartida vai junto (cascade).
+    await prisma.transaction.delete({ where: { id: current.counterpartOfId } });
+    return 2;
+  }
   const where = groupWhere(current, scope);
   if (!where) {
+    // A contrapartida, se houver, é excluída junto (cascade).
     await prisma.transaction.delete({ where: { id: txId } });
     return 1;
   }

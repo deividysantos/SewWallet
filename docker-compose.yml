@@ -33,6 +33,10 @@ services:
       ALLOW_REGISTRATION: "true"
       SEED_ON_START: "true"
       APP_TZ: America/Sao_Paulo
+      # IA das notificações: vazio = desligada no dev (defina AI_API_KEY no ambiente para testar).
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
+      AI_MODEL: ${AI_MODEL:-deepseek-flash}
       TZ: America/Sao_Paulo
       PORT: "3000"
     ports:
@@ -50,7 +54,9 @@ services:
       context: .
       dockerfile: docker/app.Dockerfile
     environment:
-      API_URL: http://localhost:3000
+      # Endereço da API visto pelo navegador. Pelo Tailscale funciona no PC e no celular.
+      # Para trocar sem editar aqui: DEV_API_URL=http://... docker compose up -d web
+      API_URL: ${DEV_API_URL:-http://100.117.91.43:3000}
     ports:
       - "8080:8080"
     volumes:
@@ -79,6 +85,9 @@ services:
       - apk-build:/app/build
       - pub-cache:/pub-cache
       - gradle-cache:/root/.gradle
+      # Chave que assina o APK. Precisa ser sempre a mesma para o celular aceitar a atualização.
+      # Fica fora do Git: guarde uma cópia junto com seus backups.
+      - ./android-keystore:/root/.android
     command: ["sh", "/docker/build-apk.sh"]
 
 volumes:

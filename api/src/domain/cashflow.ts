@@ -11,6 +11,8 @@ export interface LedgerTx {
   toAccountId: string | null;
   cardId: string | null;
   categoryId: string | null;
+  /** Previsão (valor estimado); nunca conta como realizado. */
+  isForecast?: boolean;
 }
 
 /** Fatura com o valor que ainda falta pagar (ou agendar). */

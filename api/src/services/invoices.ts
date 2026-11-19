@@ -42,7 +42,7 @@ export async function payInvoice(
 ) {
   const invoice = await ownedInvoice(userId, invoiceId);
   const [items, payments] = await Promise.all([
-    prisma.transaction.findMany({ where: { invoiceId }, select: { type: true, amount: true } }),
+    prisma.transaction.findMany({ where: { invoiceId, isForecast: false }, select: { type: true, amount: true } }),
     prisma.transaction.findMany({ where: { paysInvoiceId: invoiceId }, select: { amount: true } }),
   ]);
   const { remaining } = invoiceTotals(items, payments);

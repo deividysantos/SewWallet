@@ -11,12 +11,12 @@ import '../widgets/stitch.dart';
 import 'categories_screen.dart';
 
 IconData accountIcon(String type) => switch (type) {
-      'SAVINGS' => Icons.savings_outlined,
-      'WALLET' => Icons.account_balance_wallet_outlined,
-      'INVESTMENT' => Icons.trending_up,
-      'OTHER' => Icons.folder_outlined,
-      _ => Icons.account_balance_outlined,
-    };
+  'SAVINGS' => Icons.savings_outlined,
+  'WALLET' => Icons.account_balance_wallet_outlined,
+  'INVESTMENT' => Icons.trending_up,
+  'OTHER' => Icons.folder_outlined,
+  _ => Icons.account_balance_outlined,
+};
 
 /// Contas com saldo atual e previsto para o fim do mês.
 class AccountsScreen extends StatelessWidget {
@@ -59,19 +59,25 @@ class AccountsScreen extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('Saldo atual', style: muted),
-                        HeroAmount(total, fontSize: 24),
-                        Text('só o que já foi pago', style: muted),
-                      ]),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Saldo atual', style: muted),
+                          HeroAmount(total, fontSize: 24),
+                          Text('só o que já foi pago', style: muted),
+                        ],
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
-                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text('Previsto no fim do mês', style: muted),
-                        HeroAmount(projected, fontSize: 24),
-                        Text('pagos + pendentes', style: muted),
-                      ]),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text('Previsto no fim do mês', style: muted),
+                          HeroAmount(projected, fontSize: 24),
+                          Text('pagos + pendentes', style: muted),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -101,6 +107,7 @@ class AccountsScreen extends StatelessWidget {
       ),
       body: body,
       floatingActionButton: FloatingActionButton(
+        heroTag: null, // várias abas com "+" na mesma rota
         tooltip: 'Nova conta',
         onPressed: () => AccountForm.open(context),
         child: const Icon(Icons.add),
@@ -132,9 +139,9 @@ class AccountForm extends StatefulWidget {
 
   final Account? existing;
 
-  static Future<bool?> open(BuildContext context, {Account? existing}) => Navigator.of(context).push<bool>(
-        MaterialPageRoute(fullscreenDialog: true, builder: (_) => AccountForm(existing: existing)),
-      );
+  static Future<bool?> open(BuildContext context, {Account? existing}) => Navigator.of(
+    context,
+  ).push<bool>(MaterialPageRoute(fullscreenDialog: true, builder: (_) => AccountForm(existing: existing)));
 
   @override
   State<AccountForm> createState() => _AccountFormState();
@@ -195,7 +202,8 @@ class _AccountFormState extends State<AccountForm> {
     final ok = await confirm(
       context,
       title: 'Excluir conta',
-      message: 'A conta "${widget.existing!.name}" e TODOS os lançamentos dela serão excluídos. '
+      message:
+          'A conta "${widget.existing!.name}" e TODOS os lançamentos dela serão excluídos. '
           'Se quiser só esconder, use "Arquivada".',
       confirmLabel: 'Excluir',
       destructive: true,

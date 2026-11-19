@@ -4,6 +4,9 @@ import '../theme.dart';
 import '../widgets/common.dart';
 import 'cashflow_report_screen.dart';
 import 'category_report_screen.dart';
+import 'counterpart_report_screen.dart';
+import 'forecast_report_screen.dart';
+import 'saved_filters_screen.dart';
 
 /// Um relatório disponível na aba Relatórios.
 class _ReportEntry {
@@ -29,6 +32,18 @@ final _reports = <_ReportEntry>[
     icon: Icons.show_chart,
     open: CashflowReportScreen.open,
   ),
+  _ReportEntry(
+    title: 'Previsões',
+    description: 'Previsões do mês (fixas e avulsas): quanto foi previsto, abatido e quanto ainda falta',
+    icon: Icons.insights_outlined,
+    open: ForecastReportScreen.open,
+  ),
+  _ReportEntry(
+    title: 'Contrapartidas',
+    description: 'Compras para outras pessoas: quanto falta receber de volta e quanto já voltou',
+    icon: Icons.compare_arrows,
+    open: CounterpartReportScreen.open,
+  ),
 ];
 
 /// Aba Relatórios: lista os relatórios disponíveis.
@@ -38,7 +53,16 @@ class ReportsScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Relatórios')),
+      appBar: AppBar(
+        title: const Text('Relatórios'),
+        actions: [
+          IconButton(
+            tooltip: 'Filtros salvos',
+            onPressed: () => SavedFiltersScreen.open(context),
+            icon: const Icon(Icons.bookmarks_outlined),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.symmetric(vertical: 8),
         children: [

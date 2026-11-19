@@ -24,8 +24,7 @@ class Session extends ChangeNotifier {
 
   bool get isLoggedIn => token != null;
 
-  ApiClient get api =>
-      ApiClient(baseUrl: serverUrl, token: token, onUnauthorized: logout, client: httpClient);
+  ApiClient get api => ApiClient(baseUrl: serverUrl, token: token, onUnauthorized: logout, client: httpClient);
 
   Future<void> restore() async {
     final prefs = await SharedPreferences.getInstance();
@@ -34,16 +33,14 @@ class Session extends ChangeNotifier {
     userName = prefs.getString(_kUserName);
   }
 
-  Future<void> login({
-    required String server,
-    required String username,
-    required String password,
-  }) async {
+  Future<void> login({required String server, required String username, required String password}) async {
     final url = server.trim().isEmpty ? defaultApiUrl : server.trim();
-    final data = await ApiClient(baseUrl: url, client: httpClient).post('/auth/login', {
-      'username': username.trim(),
-      'password': password,
-    }) as Map<String, dynamic>;
+    final data =
+        await ApiClient(
+              baseUrl: url,
+              client: httpClient,
+            ).post('/auth/login', {'username': username.trim(), 'password': password})
+            as Map<String, dynamic>;
 
     serverUrl = url;
     token = data['token'] as String;

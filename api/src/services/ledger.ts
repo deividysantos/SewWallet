@@ -1,6 +1,12 @@
 import type { Account, CreditCard } from '@prisma/client';
 import { prisma } from '../db';
 import type { LedgerInvoice, LedgerTx } from '../domain/cashflow';
+import {
+  forecastRemaining,
+  forecastTotalsByInvoice,
+  mergeForecasts,
+  type ForecastState,
+} from '../domain/forecast';
 import { invoiceStatus, invoiceTotals, type InvoiceStatus } from '../domain/invoice';
 import { fromDate, type DateStr } from '../lib/dates';
 
@@ -15,6 +21,20 @@ export interface TxView extends LedgerTx {
   installmentTotal: number | null;
   recurrenceId: string | null;
   category: { id: string; name: string; kind: string; color: string | null; icon: string | null } | null;
+  isForecast: boolean;
+  forecastState: ForecastState | null;
+  /** Previsão: valor previsto (em `amount` pode vir só o restante, na visão com previsões). */
+  forecastPlanned: number;
+  /** Previsão: quanto já foi abatido por lançamentos reais. */
+  forecastAbated: number;
+  /** Previsão: quanto falta abater. */
+  forecastRemaining: number;
+  /** Lançamento real: a previsão que ele abate. */
+  forecastId: string | null;
+  /** Contrapartida: o lançamento de origem que ela zera. */
+  counterpartOfId: string | null;
+  /** Origem: a contrapartida ligada a ele. */
+  counterpartId: string | null;
 }
 
 export interface InvoiceView extends LedgerInvoice {
@@ -25,14 +45,28 @@ export interface InvoiceView extends LedgerInvoice {
   total: number;
   paid: number;
   status: InvoiceStatus;
+  /** Soma das previsões abertas nesta fatura (não entra no total nem no valor a pagar). */
+  forecastTotal: number;
 }
 
 export interface Ledger {
   today: DateStr;
   accounts: Account[];
   cards: CreditCard[];
+  /** Só lançamentos reais. */
   txs: TxView[];
+  /** Todas as previsões (abertas, encerradas e expiradas), com abatido/restante. */
+  forecasts: TxView[];
   invoices: InvoiceView[];
+}
+
+/**
+ * Lançamentos e faturas para saldos/relatórios. Com `includeForecasts`, as previsões abertas
+ * entram pelo valor restante (em conta, como pendentes; no cartão, somando à fatura).
+ */
+export function ledgerView(ledger: Ledger, includeForecasts: boolean): { txs: TxView[]; invoices: InvoiceView[] } {
+  if (!includeForecasts) return { txs: ledger.txs, invoices: ledger.invoices };
+  return mergeForecasts(ledger.txs, ledger.invoices, ledger.forecasts, ledger.today);
 }
 
 /**
@@ -51,7 +85,10 @@ export async function loadLedger(userId: string, today: DateStr): Promise<Ledger
     prisma.invoice.findMany({ where: { card: { userId } }, orderBy: { refMonth: 'asc' } }),
   ]);
 
-  const txs: TxView[] = rows.map((t) => ({
+  const counterpartOf = new Map<string, string>();
+  for (const t of rows) if (t.counterpartOfId) counterpartOf.set(t.counterpartOfId, t.id);
+
+  const all: TxView[] = rows.map((t) => ({
     id: t.id,
     type: t.type,
     status: t.status,
@@ -71,7 +108,27 @@ export async function loadLedger(userId: string, today: DateStr): Promise<Ledger
     installmentNumber: t.installmentNumber,
     installmentTotal: t.installmentTotal,
     recurrenceId: t.recurrenceId,
+    isForecast: t.isForecast,
+    forecastState: t.forecastState,
+    forecastPlanned: t.isForecast ? t.amount : 0,
+    forecastAbated: 0,
+    forecastRemaining: 0,
+    forecastId: t.forecastId,
+    counterpartOfId: t.counterpartOfId,
+    counterpartId: counterpartOf.get(t.id) ?? null,
   }));
+
+  const txs = all.filter((t) => !t.isForecast);
+  const forecasts = all.filter((t) => t.isForecast);
+  const abatedBy = new Map<string, number>();
+  for (const t of txs) {
+    if (t.forecastId) abatedBy.set(t.forecastId, (abatedBy.get(t.forecastId) ?? 0) + t.amount);
+  }
+  for (const f of forecasts) {
+    f.forecastAbated = abatedBy.get(f.id) ?? 0;
+    f.forecastRemaining = forecastRemaining(f.amount, f.forecastAbated);
+  }
+  const forecastByInvoice = forecastTotalsByInvoice(forecasts, today);
 
   const itemsByInvoice = new Map<string, { type: string; amount: number }[]>();
   const paymentsByInvoice = new Map<string, { amount: number }[]>();
@@ -102,10 +159,11 @@ export async function loadLedger(userId: string, today: DateStr): Promise<Ledger
       ...period,
       ...totals,
       status: invoiceStatus(period, totals.total, totals.paid, today, card),
+      forecastTotal: forecastByInvoice.get(inv.id) ?? 0,
     };
   });
 
-  return { today, accounts, cards, txs, invoices };
+  return { today, accounts, cards, txs, forecasts, invoices };
 }
 
 export function initialBalanceOf(accounts: Account[], filter: Set<string> | null): number {

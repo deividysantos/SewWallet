@@ -11,11 +11,11 @@ import 'card_detail_screen.dart';
 import 'card_form.dart';
 
 String invoiceStatusLabel(InvoiceStatus s) => switch (s) {
-      InvoiceStatus.open => 'Aberta',
-      InvoiceStatus.closed => 'Fechada',
-      InvoiceStatus.paid => 'Paga',
-      InvoiceStatus.overdue => 'Atrasada',
-    };
+  InvoiceStatus.open => 'Aberta',
+  InvoiceStatus.closed => 'Fechada',
+  InvoiceStatus.paid => 'Paga',
+  InvoiceStatus.overdue => 'Atrasada',
+};
 
 Color invoiceStatusColor(BuildContext context, InvoiceStatus s) {
   final colors = FinanceColors.of(context);
@@ -76,6 +76,7 @@ class CardsScreen extends StatelessWidget {
       floatingActionButton: catalog.activeAccounts.isEmpty
           ? null
           : FloatingActionButton(
+              heroTag: null, // várias abas com "+" na mesma rota
               tooltip: 'Novo cartão',
               onPressed: () => CardForm.open(context),
               child: const Icon(Icons.add),
@@ -126,7 +127,12 @@ class _CardTile extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(card.name, style: theme.textTheme.titleMedium, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            Text(
+                              card.name,
+                              style: theme.textTheme.titleMedium,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                             Text('Fecha dia ${card.closingDay} · vence dia ${card.dueDay}', style: muted),
                           ],
                         ),
@@ -141,7 +147,12 @@ class _CardTile extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Fatura atual · vence ${shortDate(inv.dueDate)}', style: muted, maxLines: 1, overflow: TextOverflow.ellipsis),
+                            Text(
+                              'Fatura atual · vence ${shortDate(inv.dueDate)}',
+                              style: muted,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
                             Text(
                               money(inv.total),
                               style: theme.textTheme.headlineSmall?.copyWith(

@@ -20,6 +20,12 @@ const cardSchema = z.object({
   paymentAccountId: id,
   color: z.string().max(20).nullish(),
   archived: z.boolean().optional(),
+  /** Últimos 4 dígitos, para reconhecer o cartão nas notificações. */
+  lastDigits: z
+    .string()
+    .regex(/^\d{4}$/, 'Informe os 4 últimos dígitos')
+    .nullish()
+    .or(z.literal('').transform(() => null)),
 });
 
 /** Cartões com a fatura atual e o limite usado (tudo o que ainda não foi pago, incluindo parcelas futuras). */

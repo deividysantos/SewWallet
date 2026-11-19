@@ -93,11 +93,21 @@ Valores em **centavos** (inteiros) e datas em `AAAA-MM-DD`. Tudo exige
 | `GET/POST/PUT/DELETE /categories` | Categorias (padrões criadas no cadastro) |
 | `GET/POST/PUT/DELETE /cards`, `GET /cards/:id/invoices` | Cartões com fatura atual e limite usado; faturas do cartão |
 | `GET /invoices/:id`, `POST /invoices/:id/payments` | Fatura com compras e pagamentos; pagar total ou parcial |
-| `GET /transactions` | Lançamentos agrupados por dia com saldo `realized`/`projected` no fim de cada dia. Filtros: `from`, `to`, `accountIds`, `cardIds`, `categoryIds`, `type`, `status`, `search`, `includeCards` |
-| `POST /transactions` | Lançamento simples, parcelado (`installments`) ou fixo (`recurrence`) |
-| `PUT /transactions/:id?scope=one\|future\|all`, `DELETE ...?scope=` | Editar/excluir este, este e os próximos, ou todos (fixos e parcelados) |
-| `PATCH /transactions/:id/status` | Marcar como pago/pendente |
-| `GET /reports/cashflow` | Fluxo de caixa: `granularity=day\|week\|month`, `mode=period\|cumulative`, `basis=projected\|realized`, `from`, `to`, `accountIds` |
+| `GET /transactions` | Lançamentos agrupados por dia com saldo `realized`/`projected` no fim de cada dia. Filtros: `from`, `to`, `accountIds`, `cardIds`, `categoryIds`, `type`, `status`, `search`, `includeCards`, `forecasts=true\|false` |
+| `POST /transactions` | Lançamento simples, parcelado (`installments`) ou fixo (`recurrence`); previsão com `isForecast: true`; lançamento real que abate uma previsão com `forecastId`; `counterpart: true` gera a contrapartida |
+| `PUT /transactions/:id?scope=one\|future\|all`, `DELETE ...?scope=` | Editar/excluir este, este e os próximos, ou todos (fixos e parcelados). No `PUT`, `counterpart: true\|false` gera ou remove a contrapartida |
+| `PATCH /transactions/:id/status` | Marcar como pago/pendente (não vale para previsões) |
+| `GET /transactions/forecasts/open?type=` | Previsões abertas (para escolher qual um lançamento abate) |
+| `PATCH /transactions/:id/forecast-state` | Encerrar (`CLOSED`) ou reabrir (`OPEN`) uma previsão |
+| `GET /reports/cashflow` | Fluxo de caixa: `granularity=day\|week\|month`, `mode=period\|cumulative`, `basis=projected\|realized`, `from`, `to`, `accountIds`, `forecasts` |
+| `GET /reports/categories`, `GET /reports/categories/detail` | Por categoria: `kind`, `basis`, `cardDate`, `from`, `to`, `forecasts` |
+| `GET /reports/dashboard` | Painel do mês (`month`): saldos, receitas/despesas previsto × realizado, maiores categorias, faturas e limites, previsões e contrapartidas. Filtros: `accountIds`, `forecasts`, `counterparts` (false tira os pares origem + contrapartida dos totais) |
+| `GET /reports/counterparts` | Contrapartidas do mês (pela data da contrapartida), com a origem de cada uma e totais pendente × quitado. Filtros: `accountIds` (conta da contrapartida), `cardIds` (cartão da origem), `type`, `status=PENDING\|PAID\|all` |
+| `POST /suggestions/notifications` | O celular envia uma notificação de banco (`app`, `appName`, `title`, `text`, `postedAt`, `key`); a IA interpreta e a API dá baixa, ignora ou cria sugestão |
+| `GET /suggestions?view=pending\|processed`, `GET /suggestions/count` | Sugestões esperando decisão (e erros da IA) / o que foi processado nos últimos 30 dias |
+| `POST /suggestions/:id/accept\|dismiss\|undo\|retry` | Aceitar (com `transactionId` criado), descartar, desfazer (volta a baixa para pendente) ou reprocessar |
+| `GET /report-filters`, `PUT/DELETE /report-filters/:report` | Filtro preferido de cada relatório (`dashboard`, `cashflow`, `categories`, `forecasts`, `counterparts`), sem o período |
+| `GET /reports/forecasts` | Previsões do mês (`month`), com previsto/abatido/restante, fixas × avulsas e abatimentos. Filtros: `accountIds`, `cardIds`, `type`, `state=OPEN\|CLOSED\|EXPIRED\|all` |
 
 ## Ambientes
 
@@ -117,3 +127,40 @@ Valores em **centavos** (inteiros) e datas em `AAAA-MM-DD`. Tudo exige
 - Fixos sem data final são projetados para os próximos 12 meses.
 - Fluxo de caixa com filtro de período começa do zero; sem filtro, saldo acumulado desde o
   início. Visões por dia, semana e mês.
+- **Previsões** (a pagar / a receber): valores estimados até uma data (ex.: R$ 100 de gasolina
+  até o dia 10). Podem ser avulsas ou fixas, em conta ou no cartão; não podem ser parceladas.
+  - Lançamentos reais vinculados **abatem** a previsão; ela conta pelo que ainda falta abater.
+  - Encerrada pelo usuário ("OK") ou **expirada** (a data passou), deixa de contar, mas fica no histórico.
+  - Aparecem na lista de lançamentos em qualquer visão do cartão (também quando as compras estão
+    agrupadas na fatura) e no detalhe da fatura, separadas das compras.
+  - Entram no previsto da lista e dos relatórios com "Considerar previsões" (padrão nas
+    Configurações, começa marcado). Nunca entram no realizado, no saldo das contas, no total da
+    fatura, no valor a pagar nem no limite do cartão.
+- **Contrapartida** (ex.: compra no cartão para um amigo que paga depois): lançamento de tipo
+  oposto e mesmo valor, com a descrição "Compensação de: <descrição da origem>", que zera o de origem.
+  - Origem no cartão: entra na conta que paga a fatura, na data de vencimento da fatura.
+    Origem em conta: mesma conta e mesma data.
+  - Os dois ficam ligados. O valor muda nos dois. A data também, exceto quando a origem é no
+    cartão: aí a contrapartida segue o vencimento da fatura. Excluir um exclui o outro.
+  - Parcelados e fixos: cada parcela/ocorrência tem a sua contrapartida.
+  - Não vale para transferências, previsões e pagamentos de fatura.
+- **Início**: painel do mês com saldos, resultado, faturas, limites, maiores gastos, previsões e
+  contrapartidas. Filtros de contas, previsões e contrapartidas; sem período (o mês anda com ‹ ›).
+- **Filtro preferido** (★ no topo do Início e de cada relatório): um por tela, salvo no servidor
+  (vale no celular e na web) e aplicado ao abrir. O período não entra. Gerenciar em
+  Configurações → Filtros salvos.
+- **Novo lançamento**: o "+" abre os atalhos Despesa, Receita, Transferência e Cartão; o tipo e o
+  cartão vêm do atalho (o formulário não tem mais a escolha Conta/Cartão). No cartão, só compra:
+  estornos entram pela importação OFX.
+- **Notificações dos bancos** (só no app Android; Configurações → Notificações dos bancos):
+  - O serviço nativo (`BankNotificationService.kt`) lê as notificações dos apps marcados que falam
+    de valor (R$) e envia para a API, mesmo com o app fechado. Sem conexão, guarda numa fila.
+    Precisa liberar "Acesso a notificações" (em APK fora da loja, antes "Permitir configurações
+    restritas" nas informações do app) e, de preferência, tirar o app da economia de bateria.
+  - A IA (`AI_API_KEY`, `AI_BASE_URL`, `AI_MODEL` no `.env.prod`; padrão DeepSeek `deepseek-flash`,
+    qualquer API no formato da OpenAI serve) extrai tipo, valor, data, conta/cartão (pelo final do
+    cartão, cadastrado no cartão) e categoria (aprendendo com os lançamentos recentes).
+  - Mesmo tipo e valor exato: pendente em conta no mesmo dia (ou até 10 dias de distância) recebe
+    baixa; já pago, ou compra igual no cartão (±1 dia), é ignorado; senão vira **sugestão** (Início →
+    ✨). Dois candidatos igualmente perto não são escolhidos sozinhos. Tudo pode ser desfeito na aba
+    Processadas. O texto das notificações dos apps marcados vai para o serviço de IA.

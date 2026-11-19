@@ -33,6 +33,15 @@ enum TransactionStatus {
   PAID
 }
 
+/// Situação de uma previsão (lançamento estimado).
+/// OPEN: conta nos saldos/relatórios pelo valor que ainda falta abater.
+/// CLOSED: encerrada pelo usuário. EXPIRED: a data passou sem ser encerrada.
+enum ForecastState {
+  OPEN
+  CLOSED
+  EXPIRED
+}
+
 enum Frequency {
   WEEKLY
   MONTHLY
@@ -49,8 +58,83 @@ model User {
   accounts     Account[]
   categories   Category[]
   cards        CreditCard[]
-  transactions Transaction[]
-  recurrences  Recurrence[]
+  transactions  Transaction[]
+  recurrences   Recurrence[]
+  reportFilters ReportFilter[]
+  suggestions   Suggestion[]
+}
+
+/// O que aconteceu com uma notificação de banco lida no celular.
+enum SuggestionStatus {
+  /// Lançamento novo sugerido, esperando o usuário aceitar ou descartar.
+  PENDING
+  /// O usuário aceitou (virou lançamento).
+  ACCEPTED
+  /// O usuário descartou.
+  DISMISSED
+  /// Já existia um lançamento pendente igual: foi marcado como pago.
+  AUTO_PAID
+  /// Já existia um lançamento igual e pago: nada a fazer.
+  ALREADY_EXISTS
+  /// Não é movimentação (propaganda, fatura fechou, compra negada...).
+  IGNORED
+  /// A IA falhou ou não está configurada; dá para tentar de novo.
+  ERROR
+}
+
+/// Notificação de banco lida no celular, interpretada pela IA e comparada com os lançamentos.
+model Suggestion {
+  id       String           @id @default(cuid())
+  userId   String
+  user     User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  status   SuggestionStatus
+  /// Motivo (ignorada) ou erro.
+  reason   String?
+
+  /// Notificação como chegou.
+  app      String
+  appName  String?
+  title    String?
+  text     String
+  postedAt DateTime
+  /// Evita processar a mesma notificação duas vezes.
+  hash     String
+
+  /// Lançamento interpretado pela IA.
+  type         TransactionType?
+  channel      String?
+  amount       Int?
+  date         DateTime?        @db.Date
+  merchant     String?
+  description  String?
+  accountId    String?
+  cardId       String?
+  categoryId   String?
+  installments Int?
+  confidence   Float?
+
+  /// Lançamento ligado: o que recebeu baixa, o que já existia, ou o criado ao aceitar.
+  transactionId String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, hash])
+  @@index([userId, status])
+}
+
+/// Filtro preferido de um relatório (ou do painel): abre sozinho ao entrar na tela.
+model ReportFilter {
+  id        String   @id @default(cuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  /// cashflow, categories, forecasts, counterparts, dashboard
+  report    String
+  /// Filtros da tela (sem o período), no formato que o app entende.
+  params    Json
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, report])
 }
 
 model Account {
@@ -98,6 +182,8 @@ model CreditCard {
   closingDayInNext Boolean  @default(true)
   paymentAccountId String
   paymentAccount   Account  @relation(fields: [paymentAccountId], references: [id], onDelete: Restrict)
+  /// Últimos 4 dígitos (para reconhecer o cartão nas notificações do banco).
+  lastDigits       String?
   color            String?
   archived         Boolean  @default(false)
   createdAt        DateTime @default(now())
@@ -143,6 +229,10 @@ model Recurrence {
   toAccountId    String?
   cardId         String?
   notes          String?
+  /// Fixo de previsão: as ocorrências são geradas como previsões.
+  isForecast     Boolean         @default(false)
+  /// Cada ocorrência gerada ganha a sua contrapartida.
+  withCounterpart Boolean        @default(false)
   createdAt      DateTime        @default(now())
 
   transactions Transaction[]
@@ -192,6 +282,20 @@ model Transaction {
   /// Nome do lançamento como veio no arquivo importado (OFX MEMO).
   externalName String?
 
+  /// Previsão: valor estimado, abatido pelos lançamentos reais vinculados (`abatements`).
+  isForecast    Boolean        @default(false)
+  forecastState ForecastState?
+  /// Lançamento real: a previsão que ele abate.
+  forecastId    String?
+  forecast      Transaction?   @relation("ForecastAbatements", fields: [forecastId], references: [id], onDelete: SetNull)
+  abatements    Transaction[]  @relation("ForecastAbatements")
+
+  /// Contrapartida: lançamento de tipo oposto que zera o de origem (ex.: compra para um amigo
+  /// que vai pagar). Preenchido na contrapartida, apontando para a origem.
+  counterpartOfId String?      @unique
+  counterpartOf   Transaction? @relation("Counterpart", fields: [counterpartOfId], references: [id], onDelete: Cascade)
+  counterpart     Transaction? @relation("Counterpart")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -201,4 +305,6 @@ model Transaction {
   @@index([paysInvoiceId])
   @@index([recurrenceId])
   @@index([installmentGroupId])
+  @@index([forecastId])
+  @@index([userId, isForecast])
 }

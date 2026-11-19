@@ -88,7 +88,10 @@ class CategoryForm extends StatefulWidget {
   /// Retorna o id da categoria salva, `true` se excluiu, ou null se cancelou.
   static Future<Object?> open(BuildContext context, {Category? existing, bool income = false}) =>
       Navigator.of(context).push<Object?>(
-        MaterialPageRoute(fullscreenDialog: true, builder: (_) => CategoryForm(existing: existing, income: income)),
+        MaterialPageRoute(
+          fullscreenDialog: true,
+          builder: (_) => CategoryForm(existing: existing, income: income),
+        ),
       );
 
   /// Cria uma categoria sem sair da tela atual; retorna o id dela (null se cancelou).
@@ -152,7 +155,8 @@ class _CategoryFormState extends State<CategoryForm> {
     final ok = await confirm(
       context,
       title: 'Excluir categoria',
-      message: 'A categoria "${widget.existing!.name}" será excluída. Os lançamentos dela continuam, mas ficam sem categoria.',
+      message:
+          'A categoria "${widget.existing!.name}" será excluída. Os lançamentos dela continuam, mas ficam sem categoria.',
       confirmLabel: 'Excluir',
       destructive: true,
     );
@@ -188,7 +192,9 @@ class _CategoryFormState extends State<CategoryForm> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
           children: [
-            Center(child: IconBadge(icon: categoryIcon(_icon), color: color, radius: 32)),
+            Center(
+              child: IconBadge(icon: categoryIcon(_icon), color: color, radius: 32),
+            ),
             const SizedBox(height: 16),
             SegmentedButton<bool>(
               segments: const [
@@ -230,7 +236,10 @@ class _CategoryFormState extends State<CategoryForm> {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: name == _icon ? color.withValues(alpha: 0.2) : null,
-                          border: Border.all(color: name == _icon ? color : scheme.outlineVariant, width: name == _icon ? 2 : 1),
+                          border: Border.all(
+                            color: name == _icon ? color : scheme.outlineVariant,
+                            width: name == _icon ? 2 : 1,
+                          ),
                         ),
                         child: Icon(categoryIcon(name), color: name == _icon ? color : scheme.onSurfaceVariant),
                       ),
